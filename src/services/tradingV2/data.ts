@@ -1,250 +1,208 @@
-import { env } from "../../config";
+// =============================================================================
+// Data — Bot config fetching & state management (Kite/NIFTY version)
+// =============================================================================
 
-import { ITradeState, TradeState } from "../../models/tradeState.model";
-import { TradingConfig } from "./config";
-import { configDebugLogger, tradingCronLogger } from "./logger";
-import { ConfigType, ActiveSubscribedBot } from "./type";
-import { ProcessPendingState } from "./ProcessPendingState";
-import { decrypt } from "../../utils/crypto";
-
-import { ExchangeAdapterFactory } from "./adapters/exchange.factory";
+import { env } from '../../config';
+import { ITradeState, TradeState } from '../../models/tradeState.model';
+import { TradingConfig } from './config';
+import { configDebugLogger, tradingCronLogger } from './logger';
+import { ConfigType, ActiveSubscribedBot } from './type';
 
 export class Data {
-    // Static in-memory cache for exchange product specs (1 hour TTL)
-    private static productCache = new Map<string, { data: any; timestamp: number }>();
-    private static PRODUCT_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-    // Static in-memory cache for bot configs (30 seconds TTL)
+    // Config cache (30s TTL — refreshed per cron cycle)
     private static configCache: { data: ConfigType[]; timestamp: number } | null = null;
-    private static CONFIG_CACHE_TTL_MS = 30 * 1000; // 30 seconds
+    private static CONFIG_CACHE_TTL_MS = 30 * 1000;
+
+    // ─── Trade State ─────────────────────────────────────────────────────────
 
     static async getOrCreateState(
         tradingBotId: string,
-        userId: string,
-        sym: string,
-        pid: number | string,
-        multiplier: number = 0,
-        currentPrice: number = 0
+        userId:       string,
+        symbol:       string,  // e.g. 'NIFTY24JAN25000CE'
     ): Promise<ITradeState> {
-        // 1. Try to find existing active (open) state
-        let st = await TradeState.findOne({
-            tradingBotId,
-            status: 'open'
-        });
+
+        // 1. Try to find existing open state
+        let st = await TradeState.findOne({ tradingBotId, status: 'open' });
 
         if (st) {
-            // Only update if fields actually differ (migration/sync safety)
-            if (st.symbol !== sym || Number(st.productId) !== Number(pid) || st.userId !== userId) {
-                tradingCronLogger.info(`[Data] Updating active state metadata for ${sym}`, {
-                    old: { symbol: st.symbol, pid: st.productId, userId: st.userId },
-                    new: { symbol: sym, pid, userId }
-                });
-                st.symbol = sym;
-                st.productId = Number(pid);
-                st.userId = userId;
+            // Sync symbol if changed (e.g. expiry rollover)
+            if (st.symbol !== symbol) {
+                st.symbol = symbol;
                 await st.save();
             }
-
-            // If we have an active open state but haven't placed an entry order yet,
-            // recalculate the quantity based on the current price, current config, and multiplier.
-            if (!st.entryOrderId) {
-                const lastClosed = await TradeState.findOne({ tradingBotId, status: 'closed' })
-                    .sort({ updatedAt: -1 });
-                const isLoss = lastClosed?.tradeOutcome === 'loss';
-
-                let quantity = TradingConfig.getConfig().INITIAL_BASE_QUANTITY || 1;
-                if (isLoss && currentPrice > 0) {
-                    const netDebt = (lastClosed?.pnl || 0) - (lastClosed?.cumulativeFees || 0);
-                    quantity = ProcessPendingState.calculateMartingaleLots(netDebt, currentPrice, multiplier);
-                    tradingCronLogger.info(`[Data] Recalculated recovery quantity for pending entry on ${sym}: ${quantity} (Level: ${st.currentLevel}, NetDebt: ${netDebt.toFixed(2)}, Multiplier: ${multiplier})`);
-                } else {
-                    quantity = TradingConfig.getConfig().INITIAL_BASE_QUANTITY || 1;
-                }
-
-                if (!quantity || isNaN(quantity) || quantity <= 0) {
-                    quantity = Math.max(1, TradingConfig.getConfig().INITIAL_BASE_QUANTITY || 1);
-                }
-
-                if (st.quantity !== quantity) {
-                    tradingCronLogger.info(`[Data] Updating pending entry quantity from ${st.quantity} to ${quantity} for ${sym}`);
-                    st.quantity = quantity;
-                    await st.save();
-                }
-            }
-
-            tradingCronLogger.debug(`[Data] Loaded active state for ${sym}`, { id: st._id });
+            tradingCronLogger.debug(`[Data] Loaded open state for bot ${tradingBotId}`);
             return st;
         }
 
-        // 2. No active state found. Look for the latest closed state to inherit lifetime stats.
+        // 2. Inherit all-time PnL from last closed state
         const lastClosed = await TradeState.findOne({ tradingBotId, status: 'closed' })
             .sort({ updatedAt: -1 });
 
-        const allTimePnl = lastClosed?.allTimePnl || 0;
-        const allTimeFees = lastClosed?.allTimeFees || 0;
+        const allTimePnl  = lastClosed?.allTimePnl  ?? 0;
+        const allTimeFees = lastClosed?.allTimeFees ?? 0;
 
-        // 🗓 Daily PnL Reset Logic (UTC)
-        const now = new Date();
-        const lastUpdate = lastClosed?.updatedAt ? new Date(lastClosed.updatedAt) : null;
-        const isSameDay = lastUpdate &&
-            lastUpdate.getUTCDate() === now.getUTCDate() &&
-            lastUpdate.getUTCMonth() === now.getUTCMonth() &&
-            lastUpdate.getUTCFullYear() === now.getUTCFullYear();
+        // 3. Daily PnL reset (IST day boundary)
+        const now     = new Date();
+        const istDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const lastUpdated = lastClosed?.updatedAt
+            ? new Date(new Date(lastClosed.updatedAt).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+            : null;
+        const isSameDay = lastUpdated &&
+            lastUpdated.getDate() === istDate.getDate() &&
+            lastUpdated.getMonth() === istDate.getMonth() &&
+            lastUpdated.getFullYear() === istDate.getFullYear();
 
-        const dailyPnl = isSameDay ? (lastClosed?.dailyPnl || 0) : 0;
+        const dailyPnl = isSameDay ? (lastClosed?.dailyPnl ?? 0) : 0;
 
         const cfg = TradingConfig.getConfig();
-        const dailyLossLimitUSD = cfg.CAPITAL_AMOUNT * (cfg.DAILY_LOSS_LIMIT / 100);
+        const dailyLossLimitINR = cfg.MAX_LOSS_PER_DAY ?? 2500; // ₹ per day
 
-        // If the last session was a loss, we inherit its level and calculate next recovery quantity
-        const isLoss = lastClosed?.tradeOutcome === 'loss';
-        const currentLevel = isLoss ? (lastClosed?.currentLevel || 1) : 1;
-        const sessionPnl = isLoss ? (lastClosed?.pnl || 0) : 0;
-        const sessionFees = isLoss ? (lastClosed?.cumulativeFees || 0) : 0;
-
-        let quantity = TradingConfig.getConfig().INITIAL_BASE_QUANTITY || 1;
-        if (isLoss && currentPrice > 0) {
-            const netDebt = sessionPnl - sessionFees;
-            quantity = ProcessPendingState.calculateMartingaleLots(netDebt, currentPrice, multiplier);
-            tradingCronLogger.info(`[Data] Calculated recovery quantity for ${sym}: ${quantity} (Level: ${currentLevel}, NetDebt: ${netDebt.toFixed(2)}, Multiplier: ${multiplier})`);
-        } else if (isLoss) {
-            // Fallback to previous quantity if currentPrice is not available (safety)
-            quantity = lastClosed?.quantity || quantity;
-            tradingCronLogger.warn(`[Data] Falling back to previous quantity for ${sym} due to missing price: ${quantity}`);
-        }
-
-        // Final safety check to ensure quantity is never 0/NaN/falsy
-        if (!quantity || isNaN(quantity) || quantity <= 0) {
-            quantity = Math.max(1, TradingConfig.getConfig().INITIAL_BASE_QUANTITY || 1);
-        }
-
-        // 3. Create a new open state
+        // 4. Create new open state
         st = await TradeState.create({
             tradingBotId,
             userId,
-            symbol: sym,
-            productId: Number(pid),
-            status: 'open',
-            currentLevel,
-            tradeOutcome: "none",
-            pnl: sessionPnl,
-            cumulativeFees: sessionFees,
+            symbol,
+            status:       'open',
+            currentLevel: 1,
+            tradeOutcome: 'none',
+            pnl:          0,
+            cumulativeFees: 0,
             dailyPnl,
-            dailyLossLimitUSD,
+            dailyLossLimitUSD: dailyLossLimitINR, // field name kept for DB compat; stores ₹
             allTimePnl,
             allTimeFees,
-            quantity
+            quantity: cfg.LOT_SIZE * (cfg.NUMBER_OF_LOTS ?? 1),
         });
 
-        tradingCronLogger.info(`[Data] Created new active state for ${sym} (Inherited PnL: ${allTimePnl}, Quantity: ${quantity})`, { id: st._id });
+        tradingCronLogger.info(`[Data] Created new open state for bot ${tradingBotId} (allTimePnl: ₹${allTimePnl})`);
         return st;
     }
 
-    private static async fetchDeltaProduct(mappedSymbol: string, baseUrl: string): Promise<any> {
-        const cacheKey = `delta:${mappedSymbol}`;
-        const cached = this.productCache.get(cacheKey);
-        if (cached && (Date.now() - cached.timestamp < this.PRODUCT_CACHE_TTL_MS)) {
-            return cached.data;
-        }
+    // ─── Bot Config Fetching ─────────────────────────────────────────────────
 
-        const productUrl = `${baseUrl}/products/${mappedSymbol}`;
-        const maxProductRetries = 3;
-
-        for (let attempt = 1; attempt <= maxProductRetries; attempt++) {
-            try {
-                tradingCronLogger.debug(`[fetchTradingConfigs] Fetching Delta product data for: ${mappedSymbol} from: ${productUrl} (Attempt ${attempt}/${maxProductRetries})`);
-                const productRes = await fetch(productUrl);
-                if (productRes.ok) {
-                    const productData: any = await productRes.json();
-                    if (productData.success && productData.result) {
-                        this.productCache.set(cacheKey, { data: productData.result, timestamp: Date.now() });
-                        tradingCronLogger.info(`[fetchTradingConfigs] ✓ Successfully fetched and cached Delta product data for ${mappedSymbol}`);
-                        return productData.result;
-                    }
-                }
-            } catch (err) {
-                tradingCronLogger.error(`[fetchTradingConfigs] Error fetching Delta product for ${mappedSymbol} (Attempt ${attempt}/${maxProductRetries}):`, err);
-            }
-            if (attempt < maxProductRetries) {
-                await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
-            }
-        }
-        return null;
-    }
-
+    /**
+     * Fetch active subscribed bots from Payload backend and map to ConfigType.
+     * The backend returns bots filtered by server IP and active subscription status.
+     */
     static async fetchTradingConfigs(
         params: { limit: number; offset: number }
     ): Promise<ConfigType[]> {
+
         const { limit, offset } = params;
 
-        if (this.configCache && (Date.now() - this.configCache.timestamp < this.CONFIG_CACHE_TTL_MS)) {
-            tradingCronLogger.debug(`[fetchTradingConfigs] Returning ${this.configCache.data.length} cached bot configs (TTL valid)`);
+        if (
+            this.configCache &&
+            Date.now() - this.configCache.timestamp < this.CONFIG_CACHE_TTL_MS
+        ) {
+            tradingCronLogger.debug(`[fetchTradingConfigs] Using cached configs (${this.configCache.data.length} bots)`);
             return this.configCache.data;
         }
 
-        const url = `${env.payloadUrl}/api/trading-bots/active-subscribed/all?limit=${limit}&offset=${offset}&serverIp=${env.serverIp}`;
+        // Fetch from backend — exchange is always 'zerodha' now
+        const url = `${env.payloadUrl}/api/trading-bots/active-subscribed/zerodha?limit=${limit}&offset=${offset}&serverIp=${env.serverIp}`;
 
         let bots: ActiveSubscribedBot[] = [];
-        const maxConfigRetries = 3;
+        const maxRetries = 3;
 
-        for (let attempt = 1; attempt <= maxConfigRetries; attempt++) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 const res = await fetch(url);
                 if (!res.ok) {
-                    tradingCronLogger.warn(`[fetchTradingConfigs] HTTP ${res.status} for ${url} (Attempt ${attempt}/${maxConfigRetries})`);
-                    if (attempt === maxConfigRetries) break;
+                    tradingCronLogger.warn(`[fetchTradingConfigs] HTTP ${res.status} (attempt ${attempt}/${maxRetries})`);
                 } else {
-                    bots = (await res.json()) as ActiveSubscribedBot[];
+                    bots = await res.json() as ActiveSubscribedBot[];
                     break;
                 }
             } catch (err: any) {
-                tradingCronLogger.error(`[fetchTradingConfigs] Fetch error for ${url} (Attempt ${attempt}/${maxConfigRetries}):`, err);
-                if (attempt === maxConfigRetries) break;
+                tradingCronLogger.error(`[fetchTradingConfigs] Fetch error (attempt ${attempt}/${maxRetries}): ${err.message}`);
             }
-            await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+            if (attempt < maxRetries) {
+                await new Promise(r => setTimeout(r, attempt * 2000));
+            }
         }
 
         if (!Array.isArray(bots)) {
-            tradingCronLogger.error(`[fetchTradingConfigs] Expected array of bots, got:`, { bots });
+            tradingCronLogger.error('[fetchTradingConfigs] Expected array, got:', { bots });
             return [];
         }
 
-        const defaultConfig = TradingConfig.defaultConfig;
-        const deltaBaseUrl = defaultConfig.BASE_URL || "https://api.india.delta.exchange/v2";
+        tradingCronLogger.info(`[fetchTradingConfigs] Fetched ${bots.length} active Zerodha bots`);
 
-        // 1. Identify unique Delta symbols using DeltaExchangeAdapter to avoid redundant API calls
-        const deltaBots = bots.filter((b) => (b.EXCHANGE || "delta").toLowerCase() === "delta");
-        const deltaAdapter = ExchangeAdapterFactory.getAdapterForExchange("delta");
-        const uniqueDeltaMappedSymbols = [...new Set(
-            deltaBots.map((bot) => deltaAdapter.mapSymbol(bot.SYMBOL || "")).filter(Boolean)
-        )];
+        const mergedConfigs: ConfigType[] = bots.map(bot => this.mapBotToConfig(bot));
 
-        tradingCronLogger.info(`[fetchTradingConfigs] Processing ${bots.length} active bots across exchanges. Found ${uniqueDeltaMappedSymbols.length} unique Delta symbols.`);
-
-        // 2. Fetch Delta product metadata for uncached symbols in parallel
-        const productDataMap = new Map<string, any>();
-        await Promise.all(
-            uniqueDeltaMappedSymbols.map(async (mappedSymbol) => {
-                const product = await this.fetchDeltaProduct(mappedSymbol, deltaBaseUrl);
-                if (product) {
-                    productDataMap.set(mappedSymbol, product);
-                }
-            })
-        );
-
-        // 3. Merge bot configurations dynamically using exchange adapters
-        const mergedConfigs: ConfigType[] = bots.map((bot) => {
-            const exchangeName = (bot.EXCHANGE || "delta").toLowerCase();
-            const adapter = ExchangeAdapterFactory.getAdapterForExchange(exchangeName);
-            return adapter.prepareConfig(bot, defaultConfig, productDataMap);
-        });
-
-        tradingCronLogger.info(`[fetchTradingConfigs] Successfully processed and merged ${mergedConfigs.length} configs across exchanges`);
         mergedConfigs.forEach(cfg => {
-            configDebugLogger.debug(`[fetchTradingConfigs] Final merged config for bot ${cfg.id} (${cfg.SYMBOL} on ${cfg.EXCHANGE})`, { config: cfg });
+            configDebugLogger.debug(`[fetchTradingConfigs] Config for bot ${cfg.id} (${cfg.INDEX} | DRY_RUN: ${cfg.DRY_RUN})`);
         });
 
         this.configCache = { data: mergedConfigs, timestamp: Date.now() };
         return mergedConfigs;
+    }
+
+    // ─── Bot → ConfigType mapper ──────────────────────────────────────────────
+
+    private static mapBotToConfig(bot: ActiveSubscribedBot): ConfigType {
+        const defaults = TradingConfig.defaultConfig;
+        return TradingConfig.buildConfig({
+            id:           bot.id,
+            USER_ID:      bot.USER_ID,
+
+            // Kite credentials
+            API_KEY:      bot.API_KEY,
+            ACCESS_TOKEN: bot.ACCESS_TOKEN,
+
+            // Instrument
+            INDEX:           (bot.INDEX ?? defaults.INDEX) as 'NIFTY' | 'BANKNIFTY',
+            EXCHANGE:        'NFO',
+            LOT_SIZE:        bot.LOT_SIZE        ?? defaults.LOT_SIZE        ?? 75,
+            NUMBER_OF_LOTS:  bot.NUMBER_OF_LOTS  ?? defaults.NUMBER_OF_LOTS  ?? 1,
+            EXPIRY_TYPE:     (bot.EXPIRY_TYPE    ?? defaults.EXPIRY_TYPE)    as 'weekly' | 'monthly',
+
+            // Timeframes
+            ENTRY_TIMEFRAME:         bot.ENTRY_TIMEFRAME        ?? defaults.ENTRY_TIMEFRAME        ?? '5minute',
+            CONFIRMATION_TIMEFRAME:  bot.CONFIRMATION_TIMEFRAME ?? defaults.CONFIRMATION_TIMEFRAME ?? '15minute',
+            STRUCTURE_TIMEFRAME:     bot.STRUCTURE_TIMEFRAME    ?? defaults.STRUCTURE_TIMEFRAME    ?? '60minute',
+
+            // Strategy
+            ATR_PERIOD:          bot.ATR_PERIOD         ?? defaults.ATR_PERIOD         ?? 14,
+            ATR_MULTIPLIER:      bot.ATR_MULTIPLIER     ?? defaults.ATR_MULTIPLIER     ?? 1.25,
+            TARGET_PROFIT_PCT:   bot.TARGET_PROFIT_PCT  ?? defaults.TARGET_PROFIT_PCT  ?? 15,
+            STOP_LOSS_PCT:       bot.STOP_LOSS_PCT      ?? defaults.STOP_LOSS_PCT      ?? 8,
+            MAX_LOSS_PER_DAY:    bot.MAX_LOSS_PER_DAY   ?? defaults.MAX_LOSS_PER_DAY   ?? 2500,
+
+            // Trailing SL
+            IS_TRAILING_SL_ENABLED: bot.IS_TRAILING_SL_ENABLED ?? defaults.IS_TRAILING_SL_ENABLED ?? true,
+            TRAILING_SL_MULTIPLIER: bot.TRAILING_SL_MULTIPLIER ?? defaults.TRAILING_SL_MULTIPLIER ?? 1.5,
+
+            // Orders
+            ORDER_TYPE: (bot.ORDER_TYPE ?? defaults.ORDER_TYPE ?? 'MARKET') as 'MARKET' | 'LIMIT',
+            PRODUCT:    (bot.PRODUCT    ?? defaults.PRODUCT    ?? 'MIS')    as 'MIS' | 'NRML',
+
+            // Risk
+            MAX_CONCURRENT_TRADES:    bot.MAX_CONCURRENT_TRADES    ?? defaults.MAX_CONCURRENT_TRADES    ?? 1,
+            DAILY_LOSS_LIMIT:         bot.DAILY_LOSS_LIMIT         ?? defaults.DAILY_LOSS_LIMIT         ?? 10,
+            IS_WEEKEND_SAFETY_ENABLED: bot.IS_WEEKEND_SAFETY_ENABLED ?? defaults.IS_WEEKEND_SAFETY_ENABLED ?? true,
+            MIN_FINAL_SCORE:          bot.MIN_FINAL_SCORE           ?? defaults.MIN_FINAL_SCORE           ?? 70,
+
+            DRY_RUN: bot.DRY_RUN ?? defaults.DRY_RUN ?? true, // default: safe
+        });
+    }
+
+    // ─── Daily loss check ─────────────────────────────────────────────────────
+
+    static async isDailyLossLimitReached(
+        tradingBotId: string,
+        maxLossPerDay: number
+    ): Promise<boolean> {
+        const st = await TradeState.findOne({ tradingBotId, status: 'open' });
+        if (!st) return false;
+        return (st.dailyPnl ?? 0) <= -Math.abs(maxLossPerDay);
+    }
+
+    // ─── Open position check ──────────────────────────────────────────────────
+
+    static async hasOpenPosition(tradingBotId: string): Promise<boolean> {
+        const st = await TradeState.findOne({ tradingBotId, status: 'open' });
+        return !!(st?.entryOrderId);
     }
 }

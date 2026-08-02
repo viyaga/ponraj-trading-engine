@@ -1,66 +1,66 @@
-import axios, { AxiosInstance } from 'axios';
-import env from '../config/env';
+// =============================================================================
+// PayloadClient — HTTP client for Payload CMS backend sync
+// Uses native fetch (Node 18+) instead of axios
+// =============================================================================
 
+import env from '../config/env';
 import { syncLogger } from './tradingV2/logger';
 
-export class PayloadClient {
-    private static baseUrl = env.payloadUrl;
-    private static apiKey = env.payloadApiKey;
-    private static _instance: AxiosInstance;
+const baseUrl   = env.payloadUrl;
+const apiKey    = env.payloadApiKey;
 
-    private static get instance(): AxiosInstance {
-        if (!this._instance) {
-            const headers: any = {
-                'Content-Type': 'application/json',
-            };
-            if (this.apiKey) {
-                headers['Authorization'] = `users API-Key ${this.apiKey}`;
-            }
+function getHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `users API-Key ${apiKey}`;
+    return headers;
+}
 
-            this._instance = axios.create({
-                baseURL: this.baseUrl,
-                headers,
-                timeout: 30000,
-                // 🚀 Keep-alive for better connection reuse during bulk sync
-                httpAgent: new (require('http').Agent)({ keepAlive: true }),
-                httpsAgent: new (require('https').Agent)({ keepAlive: true }),
-            });
-
-        }
-        return this._instance;
+async function post(path: string, data: any): Promise<any> {
+    const res = await fetch(`${baseUrl}${path}`, {
+        method:  'POST',
+        headers: getHeaders(),
+        body:    JSON.stringify(data),
+        signal:  AbortSignal.timeout(30000),
+    });
+    if (!res.ok) {
+        const msg = await res.text().catch(() => res.statusText);
+        throw new Error(`[PayloadClient] ${path} → HTTP ${res.status}: ${msg}`);
     }
+    return res.json();
+}
+
+export class PayloadClient {
 
     static async updatePnl(updates: { botId: string; allTimePnl: number }[]) {
         try {
-            const response = await this.instance.post('/api/trading-bots/update-pnl', updates);
-            syncLogger.info(`[PayloadClient] PNL updated successfully for ${updates.length} bots`);
-            return response.data;
+            const data = await post('/api/trading-bots/update-pnl', updates);
+            syncLogger.info(`[PayloadClient] PNL updated for ${updates.length} bots`);
+            return data;
         } catch (error: any) {
-            syncLogger.error(`[PayloadClient] PNL update failed:`, error.response?.data || error.message);
+            syncLogger.error(`[PayloadClient] PNL update failed: ${error.message}`);
             throw error;
         }
     }
 
     static async bulkUpsertTradeStates(data: any[]) {
         try {
-            const response = await this.instance.post('/api/trade-states/bulk', data);
-            syncLogger.info(`[PayloadClient] Trade states synced successfully: ${data.length} records`);
-            return response.data;
+            const result = await post('/api/trade-states/bulk', data);
+            syncLogger.info(`[PayloadClient] Trade states synced: ${data.length} records`);
+            return result;
         } catch (error: any) {
-            syncLogger.error(`[PayloadClient] Trade states bulk sync failed:`, error.response?.data || error.message);
+            syncLogger.error(`[PayloadClient] Trade states bulk sync failed: ${error.message}`);
             throw error;
         }
     }
 
     static async bulkUpdateBots(updates: { botId: string; errorMessage?: string; status?: string; isActive?: boolean }[]) {
         try {
-            const response = await this.instance.post('/api/trading-bots/bulk-update', updates);
-            syncLogger.info(`[PayloadClient] Bots bulk updated successfully: ${updates.length} bots`);
-            return response.data;
+            const result = await post('/api/trading-bots/bulk-update', updates);
+            syncLogger.info(`[PayloadClient] Bots bulk updated: ${updates.length} bots`);
+            return result;
         } catch (error: any) {
-            syncLogger.error(`[PayloadClient] Bulk bot update failed:`, error.response?.data || error.message);
+            syncLogger.error(`[PayloadClient] Bulk bot update failed: ${error.message}`);
             throw error;
         }
     }
 }
-

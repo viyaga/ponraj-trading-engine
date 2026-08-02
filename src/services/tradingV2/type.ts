@@ -1,98 +1,63 @@
-// 13.201.79.47,
+// =============================================================================
+// Zerodha Kite API — Type Definitions
+// NIFTY 50 Options Trading Engine
+// =============================================================================
+
+/* ───────────────────────────────────────
+   Bot Configuration (per trading bot)
+──────────────────────────────────────── */
 
 export interface ConfigType {
-    id: string,
-    USER_ID: string,
-    API_KEY: string,
-    SECRET_KEY: string,
-    BASE_URL: string,
-    RUN_MINUTES: number[],
-    PRODUCT_ID: number,
-    SYMBOL: string,
-    LOT_SIZE: number,
-    PRICE_DECIMAL_PLACES: number,
-    TIMEFRAME: string,
-    CONFIRMATION_TIMEFRAME: string,
-    STRUCTURE_TIMEFRAME: string,
-    LEVERAGE: number,
-    INITIAL_BASE_QUANTITY?: number,
-    MAX_QUANTITY?: number,
-    MIN_TRADE_SIZE: number,
-    MAX_TRADE_SIZE: number,
-    DAILY_LOSS_LIMIT: number,
-    MAX_CONCURRENT_TRADES: number,
-    CAPITAL_AMOUNT: number,
-    TRADING_MODE: "conservative" | "balanced" | "aggressive" | "meme"
-    SL_TRIGGER_BUFFER_PERCENT: number,
-    SL_LIMIT_BUFFER_PERCENT: number;
-    TP_TRIGGER_BUFFER_PERCENT: number;
-    TP_LIMIT_BUFFER_PERCENT: number;
-    MAX_ALLOWED_PRICE_MOVEMENT_PERCENT: number;
-    DRY_RUN: boolean;
-    IS_TESTING: boolean;
-    IS_TRAILING_SL_ENABLED?: boolean;
-    SL_SELECTION_MODE?: "active_tf" | "structure" | "tightest" | "lookback_3" | "doji_filter" | "fixed_atr";
-    TP_SELECTION_MODE?: "dynamic_atr" | "fixed_atr" | "fixed_rr";
-    SL_ATR_MULTIPLIER?: number;
-    TP_ATR_MULTIPLIER?: number;
-    LOOKBACK?: number;
-    CONFIRMATION_LOOKBACK?: number;
-    MIN_RR?: number;
-    MIN_RR_ENFORCEMENT_MODE?: "tp" | "sl";
-    MIN_SL_SAFETY_BUFFER_PERCENT?: number;
-    MIN_TP_PRICE_MOVEMENT_PERCENT?: number;
-    MAX_TP_PRICE_MOVEMENT_PERCENT?: number;
-    MAX_SL_PRICE_MOVEMENT_PERCENT?: number;
-    IS_CANDLE_LIMIT_EXIT_ENABLED?: boolean;
-    MAX_HOLDING_CANDLES_MAP?: Record<string, number>;
-    ESTIMATED_FEE_PERCENT: number;
+    id: string;
+    USER_ID: string;
+
+    // Kite credentials (per user account)
+    API_KEY: string;
+    ACCESS_TOKEN: string;
+
+    // Instrument settings
+    INDEX: 'NIFTY' | 'BANKNIFTY';
+    EXCHANGE: 'NFO';
+    LOT_SIZE: number;           // 75 for NIFTY, 15 for BANKNIFTY
+    NUMBER_OF_LOTS: number;
+    EXPIRY_TYPE: 'weekly' | 'monthly';
+
+    // Timeframes (Kite interval strings)
+    ENTRY_TIMEFRAME: string;        // e.g. "5minute"
+    CONFIRMATION_TIMEFRAME: string; // e.g. "15minute"
+    STRUCTURE_TIMEFRAME: string;    // e.g. "60minute"
+
+    // ATR-14 Strategy Parameters
+    ATR_PERIOD: number;             // default: 14
+    ATR_MULTIPLIER: number;         // TR must be > ATR × this (default: 1.25)
+    TARGET_PROFIT_PCT: number;      // exit when premium gains this % (default: 15)
+    STOP_LOSS_PCT: number;          // exit when premium drops this % (default: 8)
+    MAX_LOSS_PER_DAY: number;       // max daily loss in ₹ (default: 2500)
+
+    // Trailing SL
+    IS_TRAILING_SL_ENABLED: boolean;
+    TRAILING_SL_MULTIPLIER: number; // trail SL at peak - N × ATR (default: 1.5)
+
+    // Order settings
+    ORDER_TYPE: 'MARKET' | 'LIMIT';
+    PRODUCT: 'MIS' | 'NRML';       // MIS = intraday (recommended)
+
+    // Risk filters
+    MAX_CONCURRENT_TRADES: number;  // default: 1
+    DAILY_LOSS_LIMIT: number;       // % of capital (default: 10)
     IS_WEEKEND_SAFETY_ENABLED: boolean;
-    EXCHANGE?: string;
-    MIN_ENTRY_SCORE?: number;
-    MIN_CONFIRMATION_SCORE?: number;
-    MIN_STRUCTURE_SCORE?: number;
-    MIN_FINAL_SCORE?: number;
-    IS_MOMENTUM_INVALIDATION_EXIT_ENABLED?: boolean;
-    MOMENTUM_INVALIDATION_SCORE_THRESHOLD?: number;
-    MOMENTUM_INVALIDATION_CONFIRMATION_THRESHOLD?: number;
-    MOMENTUM_INVALIDATION_STRUCTURE_THRESHOLD?: number;
-    MOMENTUM_INVALIDATION_CONSECUTIVE_CYCLES?: number;
-    IS_TP_REDUCTION_ENABLED?: boolean;
+    MIN_FINAL_SCORE: number;
+
+    // Engine flags
+    DRY_RUN: boolean;               // true = log only, no real orders
 }
 
-export type MarketEvaluationMode = "structure" | "confirmation" | "entry";
-
-export interface InternalChopConfig {
-    ATR_PERIOD: number;
-    ADX_PERIOD: number;
-
-    ADX_WEAK_THRESHOLD: number;
-    LOOKBACK: number;
-    CONFIRMATION_LOOKBACK?: number;
-
-    SMALL_BODY_PERCENT_THRESHOLD: number;
-    SMALL_BODY_MIN_COUNT: number;
-
-    MIN_REQUIRED_CANDLES: number;
-    PROBABILITY_THRESHOLD: number;
-};
-
-/* ───────────────────────
-   Common Enums & Aliases
-─────────────────────── */
-
-export type OrderSide = "buy" | "sell";
-export type OrderState = "open" | "closed" | "cancelled" | "pending";
-export type OrderType = "limit_order" | "market_order";
-export type StopOrderType = "stop_loss_order" | "take_profit_order" | null;
-export type TimeInForce = "gtc";
-
-/* ───────────────────────
-   Market Data
-─────────────────────── */
+/* ───────────────────────────────────────
+   Candle / Market Data
+──────────────────────────────────────── */
 
 export interface Candle {
-    timestamp: number;
+    timestamp: number;  // Unix milliseconds
     open: number;
     high: number;
     low: number;
@@ -101,225 +66,232 @@ export interface Candle {
 }
 
 export interface TargetCandle extends Candle {
-    color: "green" | "red";
+    color: 'green' | 'red';
 }
 
-export interface TickerData {
-    // identifiers
-    symbol: string;
-    product_id: number;
-    description: string;
-    contract_type: "perpetual_futures" | string;
+/* ───────────────────────────────────────
+   Kite Instrument
+──────────────────────────────────────── */
 
-    // prices (numbers in payload)
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    mark_price: string; // comes as string
-    spot_price: string;
+export interface KiteInstrument {
+    instrument_token: number;
+    exchange_token: number;
+    tradingsymbol: string;
+    name: string;
+    expiry: string;             // 'YYYY-MM-DD'
+    strike: number;
+    tick_size: number;
+    lot_size: number;
+    instrument_type: 'CE' | 'PE' | 'EQ' | 'FUT';
+    segment: string;
+    exchange: string;
+}
 
-    // bids & asks (duplicated both top-level and quotes)
-    best_ask: string;
-    best_bid: string;
+/* ───────────────────────────────────────
+   Kite Order
+──────────────────────────────────────── */
 
-    // volume & size
+export type KiteOrderType = 'MARKET' | 'LIMIT' | 'SL' | 'SL-M';
+export type KiteTransactionType = 'BUY' | 'SELL';
+export type KiteProduct = 'MIS' | 'NRML' | 'CNC';
+export type KiteValidity = 'DAY' | 'IOC';
+export type KiteVariety = 'regular' | 'amo' | 'co' | 'iceberg' | 'auction';
+export type KiteOrderStatus =
+    | 'COMPLETE'
+    | 'REJECTED'
+    | 'CANCELLED'
+    | 'OPEN'
+    | 'TRIGGER PENDING'
+    | 'OPEN PENDING'
+    | 'VALIDATION PENDING'
+    | 'PUT ORDER REQ RECEIVED'
+    | 'MODIFY VALIDATION PENDING'
+    | 'MODIFY COMPLETE';
+
+export interface KiteOrder {
+    order_id: string;
+    exchange_order_id: string;
+    parent_order_id: string | null;
+    status: KiteOrderStatus;
+    status_message: string | null;
+    order_timestamp: string;
+    exchange_update_timestamp: string;
+    exchange_timestamp: string;
+
+    variety: KiteVariety;
+    exchange: string;
+    tradingsymbol: string;
+    instrument_token: number;
+
+    order_type: KiteOrderType;
+    transaction_type: KiteTransactionType;
+    validity: KiteValidity;
+    product: KiteProduct;
+
+    quantity: number;
+    pending_quantity: number;
+    filled_quantity: number;
+    disclosed_quantity: number;
+    market_protection: number;
+
+    price: number;
+    trigger_price: number;
+    average_price: number;
+
+    tag: string | null;
+    meta: Record<string, any>;
+}
+
+export interface KitePlaceOrderParams {
+    exchange: string;               // 'NFO', 'NSE'
+    tradingsymbol: string;          // e.g. 'NIFTY24JAN25000CE'
+    transaction_type: KiteTransactionType;
+    quantity: number;
+    order_type: KiteOrderType;
+    product: KiteProduct;
+    price?: number;                 // required for LIMIT orders
+    trigger_price?: number;         // required for SL / SL-M orders
+    validity?: KiteValidity;
+    disclosed_quantity?: number;
+    tag?: string;                   // bot ID for easy identification
+    variety?: KiteVariety;
+}
+
+/* ───────────────────────────────────────
+   Kite Quote / Tick
+──────────────────────────────────────── */
+
+export interface KiteQuote {
+    instrument_token: number;
+    timestamp: string;
+    last_price: number;
+    last_quantity: number;
+    last_trade_time: string;
+    average_price: number;
     volume: number;
-    size: number;
-    turnover: number;
-    turnover_usd: number;
-    turnover_symbol: string;
-
-    // open interest
-    oi: string;
-    oi_contracts: string;
-    oi_value: string;
-    oi_value_usd: string;
-    oi_value_symbol: string;
-    oi_change_usd_6h: string;
-
-    // funding & leverage
-    funding_rate: string;
-    leverage: number;
-    contract_value: string;
-
-    // market status
-    product_trading_status: "operational" | string;
-    sort_priority: number;
-    tags: string[];
-
-    // time
-    timestamp: number; // microseconds
-    time: string; // ISO string
-
-    // price band
-    price_band: {
-        lower_limit: string;
-        upper_limit: string;
+    buy_quantity: number;
+    sell_quantity: number;
+    ohlc: {
+        open: number;
+        high: number;
+        low: number;
+        close: number;
     };
+    change: number;
+    oi: number;
+    oi_day_high: number;
+    oi_day_low: number;
+}
 
-    // mark & changes
-    mark_basis: string;
-    mark_change_24h: string;
-    ltp_change_24h: string;
-
-    // tick
-    tick_size: string;
-
-    // asset
-    underlying_asset_symbol: string;
-
-    // quotes block
-    quotes: {
-        best_ask: string;
-        best_bid: string;
-        ask_size: string;
-        bid_size: string;
-
-        ask_iv: string | null;
-        bid_iv: string | null;
-        mark_iv: string;
-        impact_mid_price: string | null;
+export interface KiteTick {
+    instrument_token: number;
+    last_price: number;
+    volume: number;
+    ohlc: {
+        open: number;
+        high: number;
+        low: number;
+        close: number;
     };
-
-    // optional / nullable
-    greeks: null | Record<string, unknown>;
+    change: number;
+    timestamp?: Date;
+    exchange_timestamp?: Date;
 }
 
-/* ───────────────────────
-   Delta Exchange – Product
-─────────────────────── */
+/* ───────────────────────────────────────
+   Kite Position
+──────────────────────────────────────── */
 
-export interface DeltaProduct {
-    id: number;
-    symbol: string;
-    contract_type: string;
-    contract_value: string;
-    tick_size: string;
+export interface KitePosition {
+    tradingsymbol: string;
+    exchange: string;
+    instrument_token: number;
+    product: KiteProduct;
+    quantity: number;
+    overnight_quantity: number;
+    multiplier: number;
+    average_price: number;
+    close_price: number;
+    last_price: number;
+    value: number;
+    pnl: number;
+    m2m: number;
+    unrealised: number;
+    realised: number;
+    buy_quantity: number;
+    buy_price: number;
+    buy_value: number;
+    buy_m2m: number;
+    sell_quantity: number;
+    sell_price: number;
+    sell_value: number;
+    sell_m2m: number;
+    day_buy_quantity: number;
+    day_buy_price: number;
+    day_buy_value: number;
+    day_sell_quantity: number;
+    day_sell_price: number;
+    day_sell_value: number;
 }
 
-/* ───────────────────────
-   Delta Exchange – Metadata
-─────────────────────── */
+/* ───────────────────────────────────────
+   Strategy Signal
+──────────────────────────────────────── */
 
-export interface OrderMetaData {
-    pnl?: string;
-    roe?: string;
-    cashflow?: string;
-    entry_price?: string;
-    avg_exit_price?: string;
-    trigger_price?: string;
-    source?: string;
-    [key: string]: any;
+export type TradingSignal = 'BULL' | 'BEAR' | 'NONE';
+export type OptionType = 'CE' | 'PE';
+
+export interface ATRSignalResult {
+    signal: TradingSignal;
+    optionType: OptionType | null;
+    atr14: number;
+    tr: number;
+    score: number;              // 0–100 composite confidence score
+    reasons: string[];          // human-readable reasons for the signal
+    skipReasons: string[];      // reasons the signal was filtered
 }
 
-/* ───────────────────────
-   Delta Exchange – Order
-─────────────────────── */
-
-export interface OrderDetails {
-    id: string;
-    product_id: number;
-    product_symbol: string;
-
-    side: OrderSide;
-    size: number;
-
-    order_type?: OrderType;
-    state?: OrderState;
-
-    limit_price: string | null;
-    average_fill_price: string | null;
-
-    stop_price?: string | null;
-    stop_order_type?: StopOrderType;
-    stop_trigger_method?: "last_traded_price" | null;
-
-    reduce_only?: boolean;
-    bracket_order?: boolean | null;
-
-    unfilled_size?: number;
-    time_in_force?: TimeInForce;
-
-    commission?: string;
-    paid_commission?: string;
-
-    client_order_id: string | null;
-    cancellation_reason?: string | null;
-
-    created_at?: string;
-    updated_at?: string;
-
-    meta_data?: OrderMetaData;
-    product?: DeltaProduct;
-    status: string;
-}
-
-
-/* ───────────────────────
-   Delta Exchange – Position
-─────────────────────── */
-
-export interface Position {
-    entry_price: string | null;
-    size: number;
-}
-
-/* ───────────────────────
-   Delta Exchange – Cancel All Orders
-─────────────────────── */
-
-type ContractType = "perpetual_futures" | "futures" | "options";
-
-export interface CancelAllOrdersFilter {
-    contract_types?: ContractType;
-    cancel_limit_orders?: boolean;
-    cancel_stop_orders?: boolean;
-    cancel_reduce_only_orders?: boolean;
-    product_id?: number | string;
-}
-
-export interface CancelAllOrdersPayload {
-    contract_types: ContractType;
-    cancel_limit_orders: boolean;
-    cancel_stop_orders: boolean;
-    cancel_reduce_only_orders: boolean;
-    product_id?: number | string;
-}
-
-export interface EditOrderPayload {
-    id: number | string;
-    product_id: number;
-    product_symbol: string;
-    limit_price: string;
-    stop_price: string;
-    size?: number; // size is optional in the update based on docs logic, but required in payload sample. treating as optional for partial updates if allowed, but strict per sample. Let's make it optional as we primarily care about price updates. Documentation says "Order which needs to be edited". Usually ID is enough to identify, but other fields update.
-    // The user requirement specifically asked to update stop price and limit price ONLY.
-    // However, the API might require other fields. The sample shows size, mmp, post_only etc.
-    // Minimally we need what the user asked for.
-}
+/* ───────────────────────────────────────
+   Active Bot (fetched from backend)
+──────────────────────────────────────── */
 
 export interface ActiveSubscribedBot {
-    id: string
-    USER_ID: string
-    EXCHANGE?: string
-    API_KEY: string
-    SECRET_KEY: string
-    SYMBOL: string
-    PRODUCT_ID: string | number
-    LEVERAGE: number
-    MIN_TRADE_SIZE: number
-    MAX_TRADE_SIZE: number
-    TRADING_MODE: "conservative" | "balanced" | "aggressive" | "meme"
-    MIN_RR?: number
-    MIN_TP_PRICE_MOVEMENT_PERCENT?: number
-    MAX_TP_PRICE_MOVEMENT_PERCENT?: number
-    MAX_SL_PRICE_MOVEMENT_PERCENT?: number
-    MIN_FINAL_SCORE?: number
-    DAILY_LOSS_LIMIT: number
-    MAX_CONCURRENT_TRADES: number
-    CAPITAL_AMOUNT: number
-    IS_WEEKEND_SAFETY_ENABLED?: boolean
-    IS_CANDLE_LIMIT_EXIT_ENABLED?: boolean
-    MAX_HOLDING_CANDLES_MAP?: Record<string, number>
+    id: string;
+    USER_ID: string;
+
+    // Kite credentials
+    API_KEY: string;
+    ACCESS_TOKEN: string;
+
+    // Instrument
+    INDEX: 'NIFTY' | 'BANKNIFTY';
+    LOT_SIZE: number;
+    NUMBER_OF_LOTS: number;
+    EXPIRY_TYPE: 'weekly' | 'monthly';
+
+    // Strategy params
+    ENTRY_TIMEFRAME: string;
+    CONFIRMATION_TIMEFRAME: string;
+    STRUCTURE_TIMEFRAME: string;
+    ATR_PERIOD: number;
+    ATR_MULTIPLIER: number;
+    TARGET_PROFIT_PCT: number;
+    STOP_LOSS_PCT: number;
+    MAX_LOSS_PER_DAY: number;
+    IS_TRAILING_SL_ENABLED: boolean;
+    TRAILING_SL_MULTIPLIER: number;
+    ORDER_TYPE: 'MARKET' | 'LIMIT';
+    PRODUCT: 'MIS' | 'NRML';
+    MAX_CONCURRENT_TRADES: number;
+    DAILY_LOSS_LIMIT: number;
+    IS_WEEKEND_SAFETY_ENABLED: boolean;
+    MIN_FINAL_SCORE: number;
+    DRY_RUN: boolean;
 }
+
+/* ───────────────────────────────────────
+   Order Side (retained for state model compatibility)
+──────────────────────────────────────── */
+
+export type OrderSide = 'buy' | 'sell';
+export type OrderState = 'open' | 'closed' | 'cancelled' | 'pending';

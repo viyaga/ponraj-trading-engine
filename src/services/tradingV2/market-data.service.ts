@@ -1,148 +1,154 @@
-import { Candle, TargetCandle, ConfigType } from "./type";
-import { Utils } from "./utils";
-import { ExchangeAdapterFactory } from "./adapters/exchange.factory";
-import { tradingCycleErrorLogger, tradingCronLogger } from "./logger";
+// =============================================================================
+// MarketDataService — Kite candle fetching with caching
+// =============================================================================
+
+import { Candle, TargetCandle, ConfigType } from './type';
+import { KiteExchange, NIFTY_INDEX, BANKNIFTY_INDEX } from './kite-exchange';
+import { tradingCycleErrorLogger, tradingCronLogger } from './logger';
 
 export interface FetchedMarketData {
-    targetCandle: TargetCandle;
-    entryCandles: Candle[];
-    confirmationTargetCandle: TargetCandle;
-    confirmationCandles: Candle[];
-    structureTargetCandle: TargetCandle;
-    structureCandles: Candle[];
-    currentPrice: number;
+    targetCandle:              TargetCandle;
+    entryCandles:              Candle[];
+    confirmationTargetCandle:  TargetCandle;
+    confirmationCandles:       Candle[];
+    structureTargetCandle:     TargetCandle;
+    structureCandles:          Candle[];
+    spotPrice:                 number;
+}
+
+// Kite lookback candles per timeframe (need at least ATR_PERIOD+5 closed candles)
+const CANDLE_LOOKBACK = 60; // fetch last 60 candles
+
+// Kite interval → lookback duration multiplier (in milliseconds)
+const INTERVAL_MS: Record<string, number> = {
+    '1minute':  60 * 1000,
+    '3minute':  3 * 60 * 1000,
+    '5minute':  5 * 60 * 1000,
+    '10minute': 10 * 60 * 1000,
+    '15minute': 15 * 60 * 1000,
+    '30minute': 30 * 60 * 1000,
+    '60minute': 60 * 60 * 1000,
+    'day':      24 * 60 * 60 * 1000,
+};
+
+function getIndexInstrument(index: string): string {
+    return index === 'BANKNIFTY' ? BANKNIFTY_INDEX : NIFTY_INDEX;
+}
+
+function getLastClosedCandle(candles: Candle[]): TargetCandle | null {
+    if (!candles.length) return null;
+    const sorted = [...candles].sort((a, b) => a.timestamp - b.timestamp);
+    const last = sorted[sorted.length - 1];
+    return {
+        ...last,
+        color: last.close >= last.open ? 'green' : 'red',
+    };
 }
 
 export class MarketDataService {
-    private static candleCache = new Map<string, Promise<{ target: TargetCandle; candles: Candle[] } | null>>();
-    private static priceCache = new Map<string, Promise<number>>();
+    // Cache: symbol:timeframe → candles promise
+    private static candleCache = new Map<string, Promise<Candle[]>>();
+    private static priceCache  = new Map<string, Promise<number>>();
 
     static clearCaches(): void {
         this.candleCache.clear();
         this.priceCache.clear();
-        tradingCronLogger.debug(`[TradingV2] Market data caches cleared`);
+        tradingCronLogger.debug('[MarketDataService] Caches cleared');
     }
 
-    static async getTargetCandle(
-        c: {
-            SYMBOL: string;
-            TIMEFRAME: string;
-            CONFIRMATION_TIMEFRAME: string;
-            STRUCTURE_TIMEFRAME: string;
-        },
-        timeframeType: 'ENTRY' | 'CONFIRMATION' | 'STRUCTURE'
-    ): Promise<{ target: TargetCandle; candles: Candle[] } | null> {
-        const timeframe = timeframeType === 'ENTRY' 
-            ? c.TIMEFRAME 
-            : timeframeType === 'CONFIRMATION' 
-                ? c.CONFIRMATION_TIMEFRAME 
-                : c.STRUCTURE_TIMEFRAME;
-        const cacheKey = `${c.SYMBOL}:${timeframe}`;
+    static async getCandlesForTimeframe(
+        kite:       KiteExchange,
+        index:      string,
+        timeframe:  string
+    ): Promise<Candle[]> {
+        const instrument = getIndexInstrument(index);
+        const cacheKey   = `${instrument}:${timeframe}`;
 
         if (this.candleCache.has(cacheKey)) {
             return this.candleCache.get(cacheKey)!;
         }
 
         const fetchPromise = (async () => {
-            const dur = Utils.getTimeframeDurationMs(timeframe);
-            const now = Date.now();
-            const currentCandleStart = Math.floor(now / dur) * dur;
-            const adapter = ExchangeAdapterFactory.getAdapter();
+            const intervalMs = INTERVAL_MS[timeframe] ?? (5 * 60 * 1000);
+            const now  = Date.now();
+            const from = new Date(now - CANDLE_LOOKBACK * intervalMs);
+            const to   = new Date(now);
 
-            const cd = await adapter.getCandlestickData(
-                c.SYMBOL,
-                timeframe,
-                currentCandleStart - 80 * dur,
-                now
-            );
+            const candles = await kite.getCandlestickData(instrument, timeframe, from, to);
 
-            const candles = Utils.parseCandleResponse(cd);
-            if (!candles.length) return null;
-
-            candles.sort((a, b) => a.timestamp - b.timestamp);
-            const closedCandles = candles.filter(
-                candle => candle.timestamp < currentCandleStart
-            );
-
-            if (!closedCandles.length) {
-                tradingCycleErrorLogger.error(`[getTargetCandle:${c.SYMBOL}] No closed candles found`);
-                return null;
-            }
-
-            const target = closedCandles[closedCandles.length - 1];
-            return {
-                target: {
-                    ...target,
-                    color: Utils.getCandleColor(target)
-                },
-                candles: closedCandles
-            };
+            // Filter to only closed candles (exclude the current, incomplete candle)
+            const currentCandleStart = Math.floor(now / intervalMs) * intervalMs;
+            return candles.filter(c => c.timestamp < currentCandleStart);
         })();
 
-        fetchPromise.catch(() => {
-            this.candleCache.delete(cacheKey);
-        });
+        fetchPromise.catch(() => this.candleCache.delete(cacheKey));
         this.candleCache.set(cacheKey, fetchPromise);
         return fetchPromise;
     }
 
-    static async getCurrentPrice(sym: string): Promise<number> {
-        if (this.priceCache.has(sym)) {
-            return this.priceCache.get(sym)!;
+    static async getSpotPrice(kite: KiteExchange, index: string): Promise<number> {
+        const instrument = getIndexInstrument(index);
+        if (this.priceCache.has(instrument)) {
+            return this.priceCache.get(instrument)!;
         }
 
         const fetchPromise = (async () => {
-            const adapter = ExchangeAdapterFactory.getAdapter();
-            const ticker = await adapter.getTickerData(sym);
-            if (!ticker) {
-                throw new Error(`[workflow] No ticker data for ${sym}`);
-            }
-            return Number(ticker.mark_price);
+            const ltp = await kite.getLTP([instrument]);
+            const price = ltp[instrument]?.last_price ?? 0;
+            if (!price) throw new Error(`[MarketData] No LTP for ${instrument}`);
+            return price;
         })();
 
-        fetchPromise.catch(() => {
-            this.priceCache.delete(sym);
-        });
-        this.priceCache.set(sym, fetchPromise);
+        fetchPromise.catch(() => this.priceCache.delete(instrument));
+        this.priceCache.set(instrument, fetchPromise);
         return fetchPromise;
     }
 
     static async fetchMarketData(
-        c: ConfigType,
-        cronLogger: any,
-        skipLogger: any
+        c:           ConfigType,
+        kite:        KiteExchange,
+        cronLogger:  any,
+        skipLogger:  any
     ): Promise<FetchedMarketData | null> {
-        const targetDataEntry = await this.getTargetCandle(c, 'ENTRY');
-        const targetDataConfirmation = await this.getTargetCandle(c, 'CONFIRMATION');
-        const targetDataStructure = await this.getTargetCandle(c, 'STRUCTURE');
 
-        if (!targetDataEntry || !targetDataConfirmation || !targetDataStructure) {
+        const [entryCandles, confirmCandles, structureCandles, spotPrice] = await Promise.all([
+            this.getCandlesForTimeframe(kite, c.INDEX, c.ENTRY_TIMEFRAME),
+            this.getCandlesForTimeframe(kite, c.INDEX, c.CONFIRMATION_TIMEFRAME),
+            this.getCandlesForTimeframe(kite, c.INDEX, c.STRUCTURE_TIMEFRAME),
+            this.getSpotPrice(kite, c.INDEX),
+        ]);
+
+        const entryTarget    = getLastClosedCandle(entryCandles);
+        const confirmTarget  = getLastClosedCandle(confirmCandles);
+        const structTarget   = getLastClosedCandle(structureCandles);
+
+        if (!entryTarget || !confirmTarget || !structTarget) {
             const missing = [];
-            if (!targetDataEntry) missing.push('ENTRY');
-            if (!targetDataConfirmation) missing.push('CONFIRMATION');
-            if (!targetDataStructure) missing.push('STRUCTURE');
-
-            skipLogger.info(`[MarketData] SKIP: Missing closed candles for ${c.SYMBOL} on: ${missing.join(', ')}`);
+            if (!entryTarget)   missing.push(`ENTRY(${c.ENTRY_TIMEFRAME})`);
+            if (!confirmTarget) missing.push(`CONFIRM(${c.CONFIRMATION_TIMEFRAME})`);
+            if (!structTarget)  missing.push(`STRUCTURE(${c.STRUCTURE_TIMEFRAME})`);
+            skipLogger.info(`[MarketData] SKIP: No closed candles for ${c.INDEX} on: ${missing.join(', ')}`);
             return null;
         }
 
-        cronLogger.info(`[MarketData] Candlestick Data Fetched:
-          ENTRY (${c.TIMEFRAME}): ${targetDataEntry.candles.length} candles, Target: [O:${targetDataEntry.target.open}, H:${targetDataEntry.target.high}, L:${targetDataEntry.target.low}, C:${targetDataEntry.target.close}, Color:${targetDataEntry.target.color}]
-          CONFIRMATION (${c.CONFIRMATION_TIMEFRAME}): ${targetDataConfirmation.candles.length} candles, Target: [O:${targetDataConfirmation.target.open}, H:${targetDataConfirmation.target.high}, L:${targetDataConfirmation.target.low}, C:${targetDataConfirmation.target.close}, Color:${targetDataConfirmation.target.color}]
-          STRUCTURE (${c.STRUCTURE_TIMEFRAME}): ${targetDataStructure.candles.length} candles, Target: [O:${targetDataStructure.target.open}, H:${targetDataStructure.target.high}, L:${targetDataStructure.target.low}, C:${targetDataStructure.target.close}, Color:${targetDataStructure.target.color}]`);
-
-        cronLogger.debug(`[MarketPrice] Fetching latest price for ${c.SYMBOL}...`);
-        const currentPrice = await this.getCurrentPrice(c.SYMBOL);
-        cronLogger.info(`[MarketPrice] Current Mark Price: ${currentPrice}`);
+        cronLogger.info(
+            `[MarketData] ${c.INDEX} | Spot: ${spotPrice.toFixed(2)}\n` +
+            `  ENTRY   (${c.ENTRY_TIMEFRAME}):   ${entryCandles.length} candles, ` +
+                `O:${entryTarget.open} H:${entryTarget.high} L:${entryTarget.low} C:${entryTarget.close} [${entryTarget.color.toUpperCase()}]\n` +
+            `  CONFIRM (${c.CONFIRMATION_TIMEFRAME}): ${confirmCandles.length} candles, ` +
+                `O:${confirmTarget.open} H:${confirmTarget.high} L:${confirmTarget.low} C:${confirmTarget.close} [${confirmTarget.color.toUpperCase()}]\n` +
+            `  STRUCTURE(${c.STRUCTURE_TIMEFRAME}): ${structureCandles.length} candles, ` +
+                `O:${structTarget.open} H:${structTarget.high} L:${structTarget.low} C:${structTarget.close} [${structTarget.color.toUpperCase()}]`
+        );
 
         return {
-            targetCandle: targetDataEntry.target,
-            entryCandles: targetDataEntry.candles,
-            confirmationTargetCandle: targetDataConfirmation.target,
-            confirmationCandles: targetDataConfirmation.candles,
-            structureTargetCandle: targetDataStructure.target,
-            structureCandles: targetDataStructure.candles,
-            currentPrice
+            targetCandle:             entryTarget,
+            entryCandles,
+            confirmationTargetCandle: confirmTarget,
+            confirmationCandles:      confirmCandles,
+            structureTargetCandle:    structTarget,
+            structureCandles,
+            spotPrice,
         };
     }
 }
