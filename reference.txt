@@ -1,0 +1,406 @@
+pnl = 0 -> loss
+positions get pnl -> win
+
+tpSl order data type -> [outcome] TP order details: {
+  "id": "1068371733",
+  "status": "CANCELLED",
+  "meta_data": {
+    "ip": "2401:4900:4ac1:b697:a027:36d5:5505:4803",
+    "source": "api"
+  },
+  "paid_commission": "0",
+  "product_id": 16614,
+  "side": "buy",
+  "client_order_id": null,
+  "product_symbol": "ADAUSD",
+  "average_fill_price": null,
+  "limit_price": "0.4481",
+  "size": 4
+}
+[outcome] SL order details: {
+  "id": "1068371732",
+  "status": "CLOSED",
+  "meta_data": {
+    "avg_exit_price": "0.4525",
+    "cashflow": "-0.006",
+    "entry_price": "0.45100000",
+    "exit_price_with_size": [
+      {
+        "price": "0.45250000",
+        "size": "-4.000000000000000000"
+      }
+    ],
+    "fills_pnl_with_margin": [
+      {
+        "margin": "0.01804000000000000000000000",
+        "pnl": "-0.00600000"
+      }
+    ],
+    "ip": "2401:4900:4ac1:b697:a027:36d5:5505:4803",
+    "otc": false,
+    "pnl": "-0.006",
+    "roe": "-33.25942350332594235033259424",
+    "source": "api"
+  },
+  "paid_commission": "0",
+  "product_id": 16614,
+  "side": "buy",
+  "client_order_id": null,
+  "product_symbol": "ADAUSD",
+  "average_fill_price": "0.4525",
+  "limit_price": "0.453",
+  "size": 4
+}
+
+server log -> [analysis] Starting local analysis for 1m with 50 candles.
+[market-data] Fetching candles for 5m
+[delta-api] Request: GET https://api.india.delta.exchange/v2/history/candles?symbol=ADAUSD&resolution=5m&start=1764536400&end=1764558000
+[delta-api] Response 200: {"result":[{"close":0.3902,"high":0.3902,"low":0.39,"open":0.3901,"time":1764557700,"volume":1108},{"close":0.3901,"high":0.3901,"low":0.3885,"open":0.3895,"time":1764557400,"volume":10486},{"close":0.3892,"high":0.3913,"low":0.3892,"open":0.3913,"time":1764557100,"volume":4252},{"close":0.3916,"high":0.392,"low":0.3905,"open":0.3905,"time":1764556800,"volume":3387},{"close":0.3888,"high":0.3917,"low":0.3888,"open":0.3912,"time":1764556500,"volume":39941},{"close":0.3912,"high":0.3914,"low":0.3905,"open":0.391,"time":1764556200,"volume":2706},{"close":0.39,"high":0.3908,"low":0.39,"open":0.3907,"time":1764555900,"volume":16275},{"close":0.3905,"high":0.3907,"low":0.39,"open":0.3906,"time":1764555600,"volume":5138},{"close":0.3902,"high":0.3914,"low":0.3902,"open":0.3911,"time":1764555300,"volume":584},{"close":0.3912,"high":0.3922,"low":0.3899,"open":0.3899,"time":1764555000,"volume":42148},{"close":0.3907,"high":0.3922,"low":0.3906,"open":0.3922,"time":1764554700,"volume":2395},{"close":0.3919,"high":0.392,"low":0.3892,"open":0.3892,"time":1764554400,"volume":20308},{"close":0.3899,"high":0.3908,"low":0.3891,"open":0.3901,"time":1764554100,"volume":2720},{"close":0.3901,"high":0.3907,"low":0.3899,"open":0.3902,"time":1764553800,"volume":5458},{"close":0.3908,"high":0.3914,"low":0.3902,"open":0.391,"time":1764553500,"volume":1815},{"close":0.3912,"high":0.392,"low":0.3902,"open":0.391,"time":1764553200,"volume":5889},{"close":0.3911,"high":0.3925,"low":0.3908,"open":0.3917,"time":1764552900,"volume":11377},{"close":0.3923,"high":0.3923,"low":0.3895,"open":0.39,"time":1764552600,"volume":3965},{"close":0.3905,"high":0.3928,"low":0.3898,"open":0.391,"time":1764552300,"volume":8100},{"close":0.3924,"high":0.393,"low":0.3912,"open":0.3918,"time":1764552000,"volume":3708},{"close":0.3925,"high":0.394,"low":0.3925,"open":0.3927,"time":1764551700,"volume":4968},{"close":0.3916,"high":0.3936,"low":0.3915,"open":0.3919,"time":1764551400,"volume":12150},{"close":0.3935,"high":0.3955,"low":0.3909,"open":0.3916,"time":1764551100,"volume":20388},{"close":0.3908,"high":0.3913,"low":0.3876,"open":0.3877,"time":1764550800,"volume":37647},{"close":0.3876,"high":0.3916,"low":0.3876,"open":0.3901,"time":1764550500,"volume":25533},{"close":0.3908,"high":0.394,"low":0.3902,"open":0.3934,"time":1764550200,"volume":102208},{"close":0.3932,"high":0.3937,"low":0.3909,"open":0.3934,"time":1764549900,"volume":18524},{"close":0.3934,"high":0.3965,"low":0.3925,"open":0.3952,"time":1764549600,"volume":17746},{"close":0.3941,"high":0.3963,"low":0.3927,"open":0.3937,"time":1764549300,"volume":29645},{"close":0.3949,"high":0.398,"low":0.3941,"open":0.397,"time":1764549000,"volume":5405},{"close":0.3966,"high":0.4,"low":0.3966,"open":0.3982,"time":1764548700,"volume":5846},{"close":0.3987,"high":0.3997,"low":0.3959,"open":0.3988,"time":1764548400,"volume":28841},{"close":0.3978,"high":0.4024,"low":0.3978,"open":0.4024,"time":1764548100,"volume":14656},{"close":0.4033,"high":0.4042,"low":0.4004,"open":0.4034,"time":1764547800,"volume":6186},{"close":0.4042,"high":0.4125,"low":0.4023,"open":0.4125,"time":1764547500,"volume":69425},{"close":0.4142,"high":0.4152,"low":0.4116,"open":0.4146,"time":1764547200,"volume":29080},{"close":0.4142,"high":0.4156,"low":0.4137,"open":0.4156,"time":1764546900,"volume":34247},{"close":0.4153,"high":0.4166,"low":0.415,"open":0.4166,"time":1764546600,"volume":54076},{"close":0.4167,"high":0.4176,"low":0.4167,"open":0.4173,"time":1764546300,"volume":12288},{"close":0.4175,"high":0.4175,"low":0.4174,"open":0.4174,"time":1764546000,"volume":107},{"close":0.4177,"high":0.4177,"low":0.4169,"open":0.4173,"time":1764545700,"volume":95709},{"close":0.417,"high":0.4186,"low":0.417,"open":0.4181,"time":1764545400,"volume":1629},{"close":0.4183,"high":0.42,"low":0.4183,"open":0.42,"time":1764545100,"volume":113120},{"close":0.4209,"high":0.4209,"low":0.4202,"open":0.4205,"time":1764544800,"volume":11882},{"close":0.4209,"high":0.4218,"low":0.4208,"open":0.4215,"time":1764544500,"volume":10061},{"close":0.4219,"high":0.4219,"low":0.421,"open":0.42119,"time":1764544200,"volume":12887},{"close":0.4214,"high":0.4224,"low":0.4214,"open":0.42206,"time":1764543900,"volume":5540},{"close":0.4242,"high":0.4242,"low":0.4239,"open":0.4242,"time":1764543600,"volume":6055},{"close":0.4245,"high":0.4245,"low":0.4245,"open":0.4245,"time":1764543300,"volume":6},{"close":0.4229,"high":0.423,"low":0.4225,"open":0.423,"time":1764543000,"volume":6311},{"close":0.4225,"high":0.4228,"low":0.42206,"open":0.4225,"time":1764542700,"volume":7187},{"close":0.4233,"high":0.4233,"low":0.4228,"open":0.4228,"time":1764542400,"volume":3001},{"close":0.4227,"high":0.423,"low":0.4227,"open":0.423,"time":1764542100,"volume":3053},{"close":0.423,"high":0.4238,"low":0.423,"open":0.4238,"time":1764541800,"volume":4254},{"close":0.424,"high":0.4248,"low":0.424,"open":0.4248,"time":1764541500,"volume":1493},{"close":0.4242,"high":0.4242,"low":0.4242,"open":0.4242,"time":1764541200,"volume":0},{"close":0.4242,"high":0.4255,"low":0.4242,"open":0.4255,"time":1764540900,"volume":17},{"close":0.42525,"high":0.42525,"low":0.4246,"open":0.4248,"time":1764540600,"volume":314},{"close":0.4247,"high":0.4247,"low":0.4241,"open":0.4241,"time":1764540300,"volume":688},{"close":0.4242,"high":0.4242,"low":0.424,"open":0.424,"time":1764540000,"volume":136},{"close":0.4235,"high":0.4236,"low":0.4235,"open":0.4235,"time":1764539700,"volume":200},{"close":0.423,"high":0.423,"low":0.423,"open":0.423,"time":1764539400,"volume":14192},{"close":0.423,"high":0.423,"low":0.423,"open":0.423,"time":1764539100,"volume":0},{"close":0.423,"high":0.4232,"low":0.423,"open":0.4232,"time":1764538800,"volume":165},{"close":0.4231,"high":0.4231,"low":0.4231,"open":0.4231,"time":1764538500,"volume":0},{"close":0.4231,"high":0.4231,"low":0.4231,"open":0.4231,"time":1764538200,"volume":3833},{"close":0.423,"high":0.423,"low":0.4219,"open":0.4219,"time":1764537900,"volume":1116},{"close":0.42196,"high":0.42196,"low":0.4212,"open":0.4217,"time":1764537600,"volume":45855},{"close":0.4218,"high":0.4224,"low":0.4218,"open":0.4223,"time":1764537300,"volume":5430},{"close":0.4233,"high":0.4235,"low":0.4233,"open":0.4235,"time":1764537000,"volume":804},{"close":0.4236,"high":0.4236,"low":0.4236,"open":0.4236,"time":1764536700,"volume":900},{"close":0.4243,"high":0.4243,"low":0.4237,"open":0.4239,"time":1764536400,"volume":6300}],"success":true}     
+[analysis] Starting local analysis for 5m with 50 candles.
+[market-data] Sending to Gemini...
+[market-data] Gemini decision validated
+[workflow] Decisions per timeframe: [
+  {
+    "entryPrice": 0.3896,
+    "side": "buy",
+    "takeProfit": 0.3907,
+    "stopLoss": 0.3891,
+    "confidence": 0.49,
+    "confirmations": [
+      "EMA9 > EMA21 & Close > EMA50",
+      "Volume spike",
+      "ATR 0.04%"
+    ],
+    "timeframe": "1m",
+    "reasoning": "Bullish trend aligned"
+  },
+  {
+    "entryPrice": 0.3896,
+    "side": "buy",
+    "takeProfit": 0.3906,
+    "stopLoss": 0.3889,
+    "confidence": 0.6,
+    "confirmations": [
+      "EMA9 > EMA21 & Close > EMA50",
+      "Breakout candle",
+      "RSI 42 > 40",
+      "ATR 0.16%"
+    ],
+    "timeframe": "5m",
+    "reasoning": "Bullish trend aligned"
+  },
+  {
+    "entryPrice": 0.4239,
+    "side": "buy",
+    "takeProfit": 0.4264,
+    "stopLoss": 0.4218,
+    "confidence": 0.65,
+    "confirmations": [
+      "5m bullish trend",
+      "1m price above VWAP",
+      "1m RSI > 50",
+      "EMA slope positive on 1m"
+    ],
+    "reasoning": "The 5m timeframe indicates a bullish trend. The 1m timeframe shows price is above VWAP, RSI is above 50, and EMA slope is positive, suggesting upward momentum. A limit order at 0.4239 provides a maker entry near support and aligns with the overall bullish bias.",
+    "timeframe": "1m,5m"
+  }
+]
+[workflow] Making trading decision...
+[analysis] Aggregating decisions
+[strategy] Decision finalized
+[workflow] Aggregated decision: {
+  "entryPrice": 0.3896,
+  "side": "buy",
+  "takeProfit": 0.3906,
+  "stopLoss": 0.4218,
+  "confidence": 0.58,
+  "confirmations": [
+    "EMA9 > EMA21 & Close > EMA50",
+    "Volume spike",
+    "ATR 0.04%",
+    "EMA9 > EMA21 & Close > EMA50",
+    "Breakout candle",
+    "RSI 42 > 40",
+    "ATR 0.16%",
+    "5m bullish trend",
+    "1m price above VWAP",
+    "1m RSI > 50",
+    "EMA slope positive on 1m"
+  ],
+  "timeframe": "1m,5m,1m,5m",
+  "reasoning": "Aggregated from multiple timeframes"
+}
+[modifier] Modifying decision
+[workflow] Final decision: {
+  "entryPrice": 0.3896,
+  "side": "buy",
+  "takeProfit": 0.3921,
+  "stopLoss": 0.3879,
+  "confidence": 0.58,
+  "confirmations": [
+    "EMA9 > EMA21 & Close > EMA50",
+    "Volume spike",
+    "ATR 0.04%",
+    "EMA9 > EMA21 & Close > EMA50",
+    "Breakout candle",
+    "RSI 42 > 40",
+    "ATR 0.16%",
+    "5m bullish trend",
+    "1m price above VWAP",
+    "1m RSI > 50",
+    "EMA slope positive on 1m"
+  ],
+  "timeframe": "1m,5m,1m,5m",
+  "reasoning": "TP/SL recalculated."
+}
+[workflow] Executing live trade...
+[executor] Executing live trade for ADAUSD
+[delta] Placing entry order: buy 1 ADAUSD @ 0.3896
+[delta-api] Request: POST https://api.india.delta.exchange/v2/orders
+[delta-api] Request Body: {"product_id":16614,"product_symbol":"ADAUSD","side":"buy","size":1,"order_type":"limit_order","limit_price":"0.3896","time_in_force":"gtc","post_only":false,"client_order_id":"viy-1764558004517"}
+[delta-api] Response 200: {"meta":{},"result":{"average_fill_price":null,"bracket_order":null,"bracket_stop_loss_limit_price":null,"bracket_stop_loss_price":null,"bracket_take_profit_limit_price":null,"bracket_take_profit_price":null,"bracket_trail_amount":null,"cancellation_reason":null,"client_order_id":"viy-1764558004517","commission":"0","created_at":"2025-12-01T03:00:04.922425Z","id":1063196694,"limit_price":"0.3896","meta_data":{"ip":"2401:4900:6062:58e5:2dfc:45d1:777:fe4c","otc":false,"source":"api"},"mmp":"disabled","order_type":"limit_order","paid_commission":"0","product_id":16614,"product_symbol":"ADAUSD","quote_size":null,"reduce_only":false,"side":"buy","size":1,"state":"open","stop_order_type":null,"stop_price":null,"stop_trigger_method":null,"time_in_force":"gtc","trail_amount":null,"unfilled_size":1,"updated_at":"2025-12-01T03:00:04.922425Z","user_id":70111043},"success":true}
+[delta-api] Request: GET https://api.india.delta.exchange/v2/orders/1063196694
+[delta-api] Response 200: {"result":{"cancellation_reason":null,"product_symbol":"ADAUSD","stop_price":null,"bracket_take_profit_limit_price":null,"bracket_stop_loss_limit_price":null,"order_type":"limit_order","quote_size":null,"commission":"0","state":"open","stop_trigger_method":null,"id":1063196694,"user_id":70111043,"mmp":"disabled","trail_amount":null,"paid_commission":"0","bracket_take_profit_price":null,"bracket_stop_loss_price":null,"bracket_order":null,"updated_at":"2025-12-01T03:00:04.922425Z","reduce_only":false,"product":{"contract_type":"perpetual_futures","contract_unit_currency":"ADA","contract_value":"1","id":16614,"notional_type":"vanilla","quoting_asset":{"minimum_precision":2,"precision":8,"symbol":"USD"},"settling_asset":{"minimum_precision":2,"precision":8,"symbol":"USD"},"spot_index":{"symbol":".DEADAUSD"},"symbol":"ADAUSD","tick_size":"0.00001","underlying_asset":{"minimum_precision":8,"precision":8,"symbol":"ADA"}},"limit_price":"0.3896","meta_data":{"ip":"2401:4900:6062:58e5:2dfc:45d1:777:fe4c","otc":false,"source":"api"},"average_fill_price":null,"product_id":16614,"bracket_trail_amount":null,"time_in_force":"gtc","size":1,"client_order_id":"viy-1764558004517","created_at":"2025-12-01T03:00:04.922425Z","unfilled_size":1,"side":"buy","stop_order_type":null},"success":true}
+[delta-api] Request: GET https://api.india.delta.exchange/v2/orders/1063196694
+[delta-api] Response 200: {"result":{"stop_order_type":null,"bracket_order":null,"client_order_id":"viy-1764558004517","stop_trigger_method":null,"product":{"contract_type":"perpetual_futures","contract_unit_currency":"ADA","contract_value":"1","id":16614,"notional_type":"vanilla","quoting_asset":{"minimum_precision":2,"precision":8,"symbol":"USD"},"settling_asset":{"minimum_precision":2,"precision":8,"symbol":"USD"},"spot_index":{"symbol":".DEADAUSD"},"symbol":"ADAUSD","tick_size":"0.00001","underlying_asset":{"minimum_precision":8,"precision":8,"symbol":"ADA"}},"order_type":"limit_order","state":"closed","user_id":70111043,"id":1063196694,"stop_price":null,"meta_data":{"cashflow":"0","ip":"2401:4900:6062:58e5:2dfc:45d1:777:fe4c","otc":false,"pnl":"0","source":"api"},"limit_price":"0.3896","average_fill_price":"0.3896","bracket_trail_amount":null,"bracket_take_profit_limit_price":null,"commission":"0","updated_at":"2025-12-01T03:00:13.688145Z","product_id":16614,"paid_commission":"0.00008276","reduce_only":false,"bracket_stop_loss_price":null,"bracket_stop_loss_limit_price":null,"mmp":"disabled","product_symbol":"ADAUSD","time_in_force":"gtc","unfilled_size":0,"cancellation_reason":null,"quote_size":null,"size":1,"trail_amount":null,"created_at":"2025-12-01T03:00:04.922425Z","side":"buy","bracket_take_profit_price":null},"success":true}
+[delta] Placing TP/SL bracket for ADAUSD: TP:0.3921 SL:0.3879
+[delta-api] Request: POST https://api.india.delta.exchange/v2/orders/bracket
+[delta-api] Request Body: {"product_id":16614,"product_symbol":"ADAUSD","stop_loss_order":{"order_type":"limit_order","stop_price":"0.3879","limit_price":"0.3875"},"take_profit_order":{"order_type":"limit_order","stop_price":"0.3921","limit_price":"0.3917"},"bracket_stop_trigger_method":"last_traded_price"}
+[delta-api] Response 200: {"result":{"stop_loss_order":{"average_fill_price":null,"bracket_order":true,"bracket_stop_loss_limit_price":null,"bracket_stop_loss_price":null,"bracket_take_profit_limit_price":null,"bracket_take_profit_price":null,"bracket_trail_amount":null,"cancellation_reason":null,"client_order_id":null,"commission":"0","created_at":"2025-12-01T03:00:16.604700Z","id":1063196932,"limit_price":"0.3875","meta_data":{"ip":"2401:4900:6062:58e5:2dfc:45d1:777:fe4c","source":"api"},"mmp":"disabled","order_type":"limit_order","paid_commission":"0","product_id":16614,"product_symbol":"ADAUSD","quote_size":null,"reduce_only":true,"side":"sell","size":1,"state":"pending","stop_order_type":"stop_loss_order","stop_price":"0.3879","stop_trigger_method":"last_traded_price","time_in_force":"gtc","trail_amount":null,"unfilled_size":1,"updated_at":"2025-12-01T03:00:16.604700Z","user_id":70111043},"take_profit_order":{"average_fill_price":null,"bracket_order":true,"bracket_stop_loss_limit_price":null,"bracket_stop_loss_price":null,"bracket_take_profit_limit_price":null,"bracket_take_profit_price":null,"bracket_trail_amount":null,"cancellation_reason":null,"client_order_id":null,"commission":"0","created_at":"2025-12-01T03:00:16.605286Z","id":1063196933,"limit_price":"0.3917","meta_data":{"ip":"2401:4900:6062:58e5:2dfc:45d1:777:fe4c","source":"api"},"mmp":"disabled","order_type":"limit_order","paid_commission":"0","product_id":16614,"product_symbol":"ADAUSD","quote_size":null,"reduce_only":true,"side":"sell","size":1,"state":"pending","stop_order_type":"take_profit_order","stop_price":"0.3921","stop_trigger_method":"last_traded_price","time_in_force":"gtc","trail_amount":null,"unfilled_size":1,"updated_at":"2025-12-01T03:00:16.605286Z","user_id":70111043}},"success":true}
+[delta] Place TP/SL bracket result: {"result":{"stop_loss_order":{"average_fill_price":null,"bracket_order":true,"bracket_stop_loss_limit_price":null,"bracket_stop_loss_price":null,"bracket_take_profit_limit_price":null,"bracket_take_profit_price":null,"bracket_trail_amount":null,"cancellation_reason":null,"client_order_id":null,"commission":"0","created_at":"2025-12-01T03:00:16.604700Z","id":1063196932,"limit_price":"0.3875","meta_data":{"ip":"2401:4900:6062:58e5:2dfc:45d1:777:fe4c","source":"api"},"mmp":"disabled","order_type":"limit_order","paid_commission":"0","product_id":16614,"product_symbol":"ADAUSD","quote_size":null,"reduce_only":true,"side":"sell","size":1,"state":"pending","stop_order_type":"stop_loss_order","stop_price":"0.3879","stop_trigger_method":"last_traded_price","time_in_force":"gtc","trail_amount":null,"unfilled_size":1,"updated_at":"2025-12-01T03:00:16.604700Z","user_id":70111043},"take_profit_order":{"average_fill_price":null,"bracket_order":true,"bracket_stop_loss_limit_price":null,"bracket_stop_loss_price":null,"bracket_take_profit_limit_price":null,"bracket_take_profit_price":null,"bracket_trail_amount":null,"cancellation_reason":null,"client_order_id":null,"commission":"0","created_at":"2025-12-01T03:00:16.605286Z","id":1063196933,"limit_price":"0.3917","meta_data":{"ip":"2401:4900:6062:58e5:2dfc:45d1:777:fe4c","source":"api"},"mmp":"disabled","order_type":"limit_order","paid_commission":"0","product_id":16614,"product_symbol":"ADAUSD","quote_size":null,"reduce_only":true,"side":"sell","size":1,"state":"pending","stop_order_type":"take_profit_order","stop_price":"0.3921","stop_trigger_method":"last_traded_price","time_in_force":"gtc","trail_amount":null,"unfilled_size":1,"updated_at":"2025-12-01T03:00:16.605286Z","user_id":70111043}},"success":true}
+[workflow] Trade results: {
+  "entryOrderId": 1063196694,
+  "stopLossOrderId": "1063196932",
+  "takeProfitOrderId": "1063196933",
+  "orderResult": {
+    "success": true
+  }
+}
+[state] Updating state for ADAUSD. New State Diff: {"currentLevel":1,"entryOrderId":1063196694,"stopLossOrderId":"1063196932","takeProfitOrderId":"1063196933","quantity":1,"tradeOutcome":"pending","lastTradeTimestamp":"2025-12-01T03:00:17.748Z","pnl":0}
+[state] State updated successfully.
+[workflow] Trade state updated after trade: {
+  "_id": "69281b44f0f7637ee175ae51",
+  "symbol": "ADAUSD",
+  "productId": 16614,
+  "currentLevel": 1,
+  "tradeOutcome": "pending",
+  "entryOrderId": "1063196694",
+  "stopLossOrderId": "1063196932",
+  "takeProfitOrderId": "1063196933",
+  "quantity": 1,
+  "lastTradeTimestamp": "2025-12-01T03:00:17.748Z",
+  "pnl": 0,
+  "createdAt": "2025-11-27T09:35:00.150Z",
+  "updatedAt": "2025-12-01T03:00:17.929Z",
+  "__v": 0
+}
+[workflow] Trade executed {
+  "decision": {
+    "entryPrice": 0.3896,
+    "side": "buy",
+    "takeProfit": 0.3921,
+    "stopLoss": 0.3879,
+    "confidence": 0.58,
+    "confirmations": [
+      "EMA9 > EMA21 & Close > EMA50",
+      "Volume spike",
+      "ATR 0.04%",
+      "EMA9 > EMA21 & Close > EMA50",
+      "Breakout candle",
+      "RSI 42 > 40",
+      "ATR 0.16%",
+      "5m bullish trend",
+      "1m price above VWAP",
+      "1m RSI > 50",
+      "EMA slope positive on 1m"
+    ],
+    "timeframe": "1m,5m,1m,5m",
+    "reasoning": "TP/SL recalculated."
+  },
+  "decisions": [
+    {
+      "entryPrice": 0.3896,
+      "side": "buy",
+      "takeProfit": 0.3907,
+      "stopLoss": 0.3891,
+      "confidence": 0.49,
+      "confirmations": [
+        "EMA9 > EMA21 & Close > EMA50",
+        "Volume spike",
+        "ATR 0.04%"
+      ],
+      "timeframe": "1m",
+      "reasoning": "Bullish trend aligned"
+    },
+    {
+      "entryPrice": 0.3896,
+      "side": "buy",
+      "takeProfit": 0.3906,
+      "stopLoss": 0.3889,
+      "confidence": 0.6,
+      "confirmations": [
+        "EMA9 > EMA21 & Close > EMA50",
+        "Breakout candle",
+        "RSI 42 > 40",
+        "ATR 0.16%"
+      ],
+      "timeframe": "5m",
+      "reasoning": "Bullish trend aligned"
+    },
+    {
+      "entryPrice": 0.4239,
+      "side": "buy",
+      "takeProfit": 0.4264,
+      "stopLoss": 0.4218,
+      "confidence": 0.65,
+      "confirmations": [
+        "5m bullish trend",
+        "1m price above VWAP",
+        "1m RSI > 50",
+        "EMA slope positive on 1m"
+      ],
+      "reasoning": "The 5m timeframe indicates a bullish trend. The 1m timeframe shows price is above VWAP, RSI is above 50, and EMA slope is positive, suggesting upward momentum. A limit order at 0.4239 provides a maker entry near support and aligns with the overall bullish bias.",
+      "timeframe": "1m,5m"
+    }
+  ],
+  "results": {
+    "entryOrderId": 1063196694,
+    "stopLossOrderId": "1063196932",
+    "takeProfitOrderId": "1063196933",
+    "orderResult": {
+      "success": true
+    }
+  },
+  "state": {
+    "_id": "69281b44f0f7637ee175ae51",
+    "symbol": "ADAUSD",
+    "productId": 16614,
+    "currentLevel": 1,
+    "tradeOutcome": "pending",
+    "entryOrderId": "1063196694",
+    "stopLossOrderId": "1063196932",
+    "takeProfitOrderId": "1063196933",
+    "quantity": 1,
+    "lastTradeTimestamp": "2025-12-01T03:00:17.748Z",
+    "pnl": 0,
+    "createdAt": "2025-11-27T09:35:00.150Z",
+    "updatedAt": "2025-12-01T03:00:17.929Z",
+    "__v": 0
+  }
+}
+[Trading Cron] Cycle result status: executed
+[Trading Cron] Trade executed. Logging to trade logger.
+2025-12-01T03:00:18.071Z [info]: TRADE_EXECUTED {
+  "service": "trade-tracker",
+  "symbol": "ADAUSD",
+  "tradeState": {
+    "currentLevel": 1,
+    "tradeOutcome": "pending",
+    "quantity": 1,
+    "pnl": 0,
+    "lastTradeTimestamp": "2025-12-01T03:00:17.748Z"
+  },
+  "trade": {
+    "entryOrderId": 1063196694,
+    "stopLossOrderId": "1063196932",
+    "takeProfitOrderId": "1063196933",
+    "direction": "buy",
+    "quantity": 1,
+    "entryPrice": 0.3896
+  }
+}
+[Trading Cron] Trade executed
+[Trading Cron] Trade executed {
+  "decision": {
+    "entryPrice": 0.3896,
+    "side": "buy",
+    "takeProfit": 0.3921,
+    "stopLoss": 0.3879,
+    "confidence": 0.58,
+    "confirmations": [
+      "EMA9 > EMA21 & Close > EMA50",
+      "Volume spike",
+      "ATR 0.04%",
+      "EMA9 > EMA21 & Close > EMA50",
+      "Breakout candle",
+      "RSI 42 > 40",
+      "ATR 0.16%",
+      "5m bullish trend",
+      "1m price above VWAP",
+      "1m RSI > 50",
+      "EMA slope positive on 1m"
+    ],
+    "timeframe": "1m,5m,1m,5m",
+    "reasoning": "TP/SL recalculated."
+  },
+  "decisionsPerTF": [
+    {
+      "entryPrice": 0.3896,
+      "side": "buy",
+      "takeProfit": 0.3907,
+      "stopLoss": 0.3891,
+      "confidence": 0.49,
+      "confirmations": [
+        "EMA9 > EMA21 & Close > EMA50",
+        "Volume spike",
+        "ATR 0.04%"
+      ],
+      "timeframe": "1m",
+      "reasoning": "Bullish trend aligned"
+    },
+    {
+      "entryPrice": 0.3896,
+      "side": "buy",
+      "takeProfit": 0.3906,
+      "stopLoss": 0.3889,
+      "confidence": 0.6,
+      "confirmations": [
+        "EMA9 > EMA21 & Close > EMA50",
+        "Breakout candle",
+        "RSI 42 > 40",
+        "ATR 0.16%"
+      ],
+      "timeframe": "5m",
+      "reasoning": "Bullish trend aligned"
+    },
+    {
+      "entryPrice": 0.4239,
+      "side": "buy",
+      "takeProfit": 0.4264,
+      "stopLoss": 0.4218,
+      "confidence": 0.65,
+      "confirmations": [
+        "5m bullish trend",
+        "1m price above VWAP",
+        "1m RSI > 50",
+        "EMA slope positive on 1m"
+      ],
+      "reasoning": "The 5m timeframe indicates a bullish trend. The 1m timeframe shows price is above VWAP, RSI is above 50, and EMA slope is positive, suggesting upward momentum. A limit order at 0.4239 provides a maker entry near support and aligns with the overall bullish bias.",
+      "timeframe": "1m,5m"
+    }
+  ],
+  "tradeResults": {
+    "entryOrderId": 1063196694,
+    "stopLossOrderId": "1063196932",
+    "takeProfitOrderId": "1063196933",
+    "orderResult": {
+      "success": true
+    }
+  },
+  "state": {
+    "_id": "69281b44f0f7637ee175ae51",
+    "symbol": "ADAUSD",
+    "productId": 16614,
+    "currentLevel": 1,
+    "tradeOutcome": "pending",
+    "entryOrderId": "1063196694",
+    "stopLossOrderId": "1063196932",
+    "takeProfitOrderId": "1063196933",
+    "quantity": 1,
+    "lastTradeTimestamp": "2025-12-01T03:00:17.748Z",
+    "pnl": 0,
+    "createdAt": "2025-11-27T09:35:00.150Z",
+    "updatedAt": "2025-12-01T03:00:17.929Z",
+    "__v": 0
+  }
+}

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viyaga Trading Bot - Logic Flow</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --accent-check: #f59e0b;
+            /* Amber - Condition */
+            --accent-action: #3b82f6;
+            /* Blue - Action */
+            --accent-stop: #ef4444;
+            /* Red - Stop */
+            --accent-go: #10b981;
+            /* Emerald - Start/Success */
+            --line-color: #334155;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            justify-content: center;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            margin-bottom: 3rem;
+            text-align: center;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        /* Flow Chart Nodes */
+        .flow-step {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+
+        /* Connecting Lines */
+        .flow-step:not(:last-child)::after {
+            content: '';
+            width: 2px;
+            height: 2rem;
+            background-color: var(--line-color);
+            position: absolute;
+            bottom: -2rem;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--line-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            width: 100%;
+            max-width: 600px;
+            position: relative;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border-color: #475569;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            border-top-left-radius: 12px;
+            border-bottom-left-radius: 12px;
+        }
+
+        .card.start {
+            border-left: 6px solid var(--accent-go);
+        }
+
+        .card.condition {
+            border-left: 6px solid var(--accent-check);
+        }
+
+        .card.action {
+            border-left: 6px solid var(--accent-action);
+        }
+
+        .card.stop {
+            border-left: 6px solid var(--accent-stop);
+        }
+
+        .card-header {
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-body {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+        }
+
+        .card-details {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--line-color);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .detail-item {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 0.5rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .detail-label {
+            color: var(--text-main);
+            font-weight: 600;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        /* Logic Branches */
+        .branch-container {
+            display: flex;
+            gap: 1rem;
+            width: 100%;
+            justify-content: center;
+            margin-top: 2rem;
+        }
+
+        .branch {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 300px;
+        }
+
+        .branch-label {
+            background: var(--card-bg);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            margin-bottom: 0.5rem;
+            border: 1px solid var(--line-color);
+            color: var(--text-muted);
+            z-index: 10;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div>
+            <h1>Viyaga Trading Bot</h1>
+            <div class="subtitle">Visual Logic Flowchart & Decision Tree</div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="dot" style="background:var(--accent-go)"></div> Start/Success
+            </div>
+            <div class="legend-item">
+                <div class="dot" style="background:var(--accent-action)"></div> Action/Process
+            </div>
+            <div class="legend-item">
+                <div class="dot" style="background:var(--accent-check)"></div> Condition Check
+            </div>
+            <div class="legend-item">
+                <div class="dot" style="background:var(--accent-stop)"></div> Stop/Exit
+            </div>
+        </div>
+
+        <!-- Step 1: Cron -->
+        <div class="flow-step">
+            <div class="card start">
+                <div class="card-header">Cron Trigger <span style="font-size:0.8em; opacity:0.7">1 min interval</span>
+                </div>
+                <div class="card-body">
+                    The system heartbeat triggers the trading cycle.
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Lock Check -->
+        <div class="flow-step">
+            <div class="card condition">
+                <div class="card-header">Is Execution Locked?</div>
+                <div class="card-body">
+                    Prevents overlapping trading cycles (concurrency control).
+                </div>
+            </div>
+
+            <div class="branch-container">
+                <div class="branch">
+                    <div class="branch-label">Yes</div>
+                    <div class="card stop" style="max-width: 100%">
+                        <div class="card-header">Stop: Locked</div>
+                        <div class="card-body">Abort to avoid double execution.</div>
+                    </div>
+                </div>
+                <div class="branch">
+                    <div class="branch-label">No</div>
+                    <!-- Continuation -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Previous Trade -->
+        <div class="flow-step">
+            <div class="card condition">
+                <div class="card-header">Previous Trade Status?</div>
+                <div class="card-body">
+                    Checks <code>entryOrderId</code> with Delta Exchange.
+                </div>
+            </div>
+            <div class="branch-container">
+                <div class="branch">
+                    <div class="branch-label">Open / Pending</div>
+                    <div class="card stop" style="max-width: 100%">
+                        <div class="card-header">Stop: Trade Active</div>
+                        <div class="card-body">Wait for current trade to close.</div>
+                    </div>
+                </div>
+                <div class="branch">
+                    <div class="branch-label">Closed / None</div>
+                    <div class="card action" style="max-width: 100%">
+                        <div class="card-header">Update PnL State</div>
+                        <div class="card-body">Update Trade level based on result.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: Market Analysis -->
+        <div class="flow-step">
+            <div class="card action">
+                <div class="card-header">Fetch & Analyze Market Data</div>
+                <div class="card-body">
+                    Retrieves candles for multiple timeframes (5m, 15m, 1h). Runs technical indicators.
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 5: Filters -->
+        <div class="flow-step">
+            <div class="card condition">
+                <div class="card-header">Apply Safety Filters</div>
+                <div class="card-body">
+                    All conditions must be PASSED to proceed.
+                </div>
+                <div class="card-details">
+                    <div class="detail-item">
+                        <span class="detail-label">Spread Check</span>
+                        Must be < 0.1% (Configurable) </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Volatility</span>
+                                Candle body size within safe limits
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Market State</span>
+                                Not Choppy (Red-Green-Red patterns)
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Volume</span>
+                                Must not be significantly below average
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Price Action</span>
+                                No "Indecision" candles (Dojis)
+                            </div>
+                    </div>
+                </div>
+
+                <div class="branch-container">
+                    <div class="branch">
+                        <div class="branch-label">Any Failed</div>
+                        <div class="card stop" style="max-width: 100%">
+                            <div class="card-header">Stop: Filter Triggered</div>
+                            <div class="card-body">Log specific reason (e.g., "Spread too high")</div>
+                        </div>
+                    </div>
+                    <div class="branch">
+                        <div class="branch-label">All Passed</div>
+                        <!-- Continue -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 6: Strategy Signal -->
+            <div class="flow-step">
+                <div class="card condition">
+                    <div class="card-header">Generate Signal (AI + Tech)</div>
+                    <div class="card-body">
+                        Combines EMA Trends, RSI, and optionally Gemini AI analysis.
+                    </div>
+                    <div class="card-details">
+                        <div class="detail-item">
+                            <span class="detail-label">Buy Signal</span>
+                            Price > EMA21 + RSI Bullish + AI Bullish
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Sell Signal</span>
+                            Price < EMA21 + RSI Bearish + AI Bearish </div>
+                        </div>
+                    </div>
+
+                    <div class="branch-container">
+                        <div class="branch">
+                            <div class="branch-label">None / Weak</div>
+                            <div class="card stop" style="max-width: 100%">
+                                <div class="card-header">Stop: No Signal</div>
+                                <div class="card-body">Wait for clearer trend.</div>
+                            </div>
+                        </div>
+                        <div class="branch">
+                            <div class="branch-label">Strong Buy/Sell</div>
+                            <!-- Continue -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 7: Execution -->
+                <div class="flow-step">
+                    <div class="card action">
+                        <div class="card-header">Execute Trade</div>
+                        <div class="card-body">
+                            Calculates position size (Trade) and places orders.
+                        </div>
+                        <div class="card-details">
+                            <div class="detail-item">
+                                <span class="detail-label">1. Quantity</span>
+                                Base * (2 ^ Trade Level)
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">2. Entry Order</span>
+                                Limit Order at Bid/Ask
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">3. Bracket</span>
+                                Places TP and SL orders once Entry fills
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flow-step">
+                    <div class="card start">
+                        <div class="card-header">Cycle Complete</div>
+                        <div class="card-body">
+                            State saved. Monitors for Bracket Order fill.
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+</body>
+
+</html>
