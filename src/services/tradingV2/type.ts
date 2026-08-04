@@ -22,10 +22,11 @@ export interface ConfigType {
     NUMBER_OF_LOTS: number;
     EXPIRY_TYPE: 'weekly' | 'monthly';
 
-    // Timeframes (Kite interval strings)
-    ENTRY_TIMEFRAME: string;        // e.g. "5minute"
-    CONFIRMATION_TIMEFRAME: string; // e.g. "15minute"
-    STRUCTURE_TIMEFRAME: string;    // e.g. "60minute"
+    // Timeframe (Kite interval string)
+    TIMEFRAME: string;              // default: "15minute"
+    ENTRY_TIMEFRAME?: string;        // fallback compatibility
+    CONFIRMATION_TIMEFRAME?: string;
+    STRUCTURE_TIMEFRAME?: string;
 
     // ATR-14 Strategy Parameters
     ATR_PERIOD: number;             // default: 14

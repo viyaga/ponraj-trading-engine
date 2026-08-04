@@ -15,8 +15,8 @@ import { startCycleLogging, endCycleLogging } from "../utils/cycleLogger";
 
 const tradingCycleCronJob = (): void => {
 
-    // Default schedule: every 5 minutes, Monday–Friday
-    cron.schedule(env.cronSchedule ?? "*/5 * * * 1-5", async () => {
+    // Default schedule: every 15 minutes, Monday–Friday (aligned with 15m ATR candle strategy)
+    cron.schedule(env.cronSchedule ?? "*/15 * * * 1-5", async () => {
 
         // ── NSE Market Hours Guard ────────────────────────────────────────────
         if (!isNSEMarketOpen()) {
@@ -116,7 +116,7 @@ const tradingCycleCronJob = (): void => {
         }
     });
 
-    tradingCronLogger.info(`[CronScheduler] Cron scheduled: "${env.cronSchedule ?? "*/5 * * * 1-5"}" (NSE market hours guard active)`);
+    tradingCronLogger.info(`[CronScheduler] Cron scheduled: "${env.cronSchedule ?? "*/15 * * * 1-5"}" (NSE market hours guard active)`);
 };
 
 export default tradingCycleCronJob;

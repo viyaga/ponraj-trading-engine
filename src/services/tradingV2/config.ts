@@ -19,10 +19,8 @@ export class TradingConfig {
         NUMBER_OF_LOTS:      1,
         EXPIRY_TYPE:         'weekly',
 
-        // Timeframes (Kite interval strings)
-        ENTRY_TIMEFRAME:          '5minute',
-        CONFIRMATION_TIMEFRAME:   '15minute',
-        STRUCTURE_TIMEFRAME:      '60minute',
+        // Timeframe (Kite interval string)
+        TIMEFRAME: '15minute',
 
         // ATR-14 strategy
         ATR_PERIOD:           14,

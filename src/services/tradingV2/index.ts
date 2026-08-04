@@ -61,19 +61,17 @@ export class TradingV2 {
             }
             const kite = new KiteExchange(c.API_KEY, c.ACCESS_TOKEN);
 
-            // ── 3. Fetch market data (NIFTY index candles + spot LTP) ─────
+            // ── 3. Fetch market data (15m NIFTY index candles + spot LTP) ─
             const marketData = await MarketDataService.fetchMarketData(
                 c, kite, tradingCronLogger, skipTradingLogger
             );
             if (!marketData) return;
 
-            const { entryCandles, confirmationCandles, structureCandles, spotPrice } = marketData;
+            const { candles15m, spotPrice } = marketData;
 
-            // ── 4. ATR-14 Signal Evaluation ───────────────────────────────
+            // ── 4. ATR-14 Signal Evaluation (15m True Range Expansion) ─────
             const signalResult = ATR14Strategy.evaluateSignal(
-                entryCandles,
-                confirmationCandles,
-                structureCandles,
+                candles15m,
                 spotPrice,
                 c.ATR_MULTIPLIER,
                 c.ATR_PERIOD
@@ -81,7 +79,6 @@ export class TradingV2 {
 
             tradingCronLogger.info(
                 `${tag} Signal: ${signalResult.signal} | ` +
-                `Score: ${signalResult.score}/${c.MIN_FINAL_SCORE} | ` +
                 `ATR14: ${signalResult.atr14.toFixed(1)} | ` +
                 `TR: ${signalResult.tr.toFixed(1)} | ` +
                 `Reasons: ${signalResult.reasons.join('; ')}`
@@ -97,21 +94,16 @@ export class TradingV2 {
                 Data.hasOpenPosition(c.id),
             ]);
 
-            // ── 6. Win-rate filters ───────────────────────────────────────
-            const filterResult = ATR14Strategy.applyWinRateFilters({
-                signal:          signalResult.signal,
-                score:           signalResult.score,
-                minScore:        c.MIN_FINAL_SCORE,
-                atr14:           signalResult.atr14,
-                spotPrice,
-                isWeekendSafety: c.IS_WEEKEND_SAFETY_ENABLED,
-                minsToClose:     getMinutesToMarketClose(),
-                hasOpenPosition: hasOpenPos,
-                dailyLossHit,
-            });
-
-            if (!filterResult.pass) {
-                skipTradingLogger.info(`${tag} SKIP: ${filterResult.reason}`);
+            // ── 6. Filter checks (Open position, daily loss, signal present) ──
+            if (signalResult.signal === 'NONE') {
+                return;
+            }
+            if (hasOpenPos) {
+                skipTradingLogger.info(`${tag} SKIP: Open position already exists for this bot`);
+                return;
+            }
+            if (dailyLossHit) {
+                skipTradingLogger.info(`${tag} SKIP: Max daily loss limit (₹${c.MAX_LOSS_PER_DAY}) reached`);
                 return;
             }
 

@@ -124,6 +124,7 @@ export class BulkSyncService {
             tradeAmountInUse: 1,
             breakoutTimeframe: 1,
             entryFilledAt: 1,
+            status: 1,        // ← include open/closed status for backend
             createdAt: 1,
             updatedAt: 1
         })

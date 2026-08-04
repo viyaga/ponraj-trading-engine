@@ -63,4 +63,18 @@ export class PayloadClient {
             throw error;
         }
     }
+
+    static async syncPortfolio(exchangeId: string, portfolioData: { positions?: any; holdings?: any; orders?: any; margins?: any }) {
+        try {
+            const result = await post('/api/engine/sync-portfolio', {
+                exchangeId,
+                ...portfolioData,
+            });
+            syncLogger.info(`[PayloadClient] Portfolio synced for exchange ${exchangeId}`);
+            return result;
+        } catch (error: any) {
+            syncLogger.error(`[PayloadClient] Portfolio sync failed: ${error.message}`);
+            throw error;
+        }
+    }
 }
