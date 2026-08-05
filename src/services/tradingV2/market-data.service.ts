@@ -5,6 +5,7 @@
 import { Candle, TargetCandle, ConfigType } from './type';
 import { KiteExchange, NIFTY_INDEX, BANKNIFTY_INDEX } from './kite-exchange';
 import { tradingCycleErrorLogger, tradingCronLogger } from './logger';
+import { AngelMarketDataService } from './angel-market-data.service';
 
 export interface FetchedMarketData {
     candles15m:   Candle[];
@@ -32,6 +33,8 @@ export class MarketDataService {
 
     /**
      * Fetch 15-minute candles for the index instrument.
+     * Prefers Angel One SmartAPI (100% Free Candles) if configured,
+     * falling back to Zerodha Kite historical API.
      */
     static async get15mCandles(
         kite:  KiteExchange,
@@ -46,11 +49,23 @@ export class MarketDataService {
 
         const fetchPromise = (async () => {
             const now  = Date.now();
+            const currentCandleStart = Math.floor(now / FIFTEEN_MIN_MS) * FIFTEEN_MIN_MS;
+
+            // 1. Try Angel One SmartAPI (Free)
+            try {
+                const angelCandles = await AngelMarketDataService.get15mCandles(index);
+                if (angelCandles && angelCandles.length > 0) {
+                    return angelCandles.filter(c => c.timestamp < currentCandleStart);
+                }
+            } catch (err: any) {
+                tradingCronLogger.debug(`[MarketDataService] Angel One candle fetch fallback to Zerodha: ${err.message}`);
+            }
+
+            // 2. Fallback to Zerodha Kite API
             const from = new Date(now - CANDLE_LOOKBACK * FIFTEEN_MIN_MS);
             const to   = new Date(now);
 
             const candles = await kite.getCandlestickData(instrument, '15minute', from, to);
-            const currentCandleStart = Math.floor(now / FIFTEEN_MIN_MS) * FIFTEEN_MIN_MS;
             return candles.filter(c => c.timestamp < currentCandleStart);
         })();
 
