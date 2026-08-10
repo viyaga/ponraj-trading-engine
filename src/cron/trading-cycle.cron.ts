@@ -6,21 +6,21 @@ import { Data } from "../services/tradingV2/data";
 import { TradingConfig } from "../services/tradingV2/config";
 import { tradingCronLogger } from "../services/tradingV2/logger";
 import { BulkSyncService } from "../services/bulkSync.service";
-import { isNSEMarketOpen } from "../services/tradingV2/strategies/atr14-strategy";
+import { is3pmTo315pmWindow } from "../services/tradingV2/strategies/atr14-strategy";
 import { startCycleLogging, endCycleLogging } from "../utils/cycleLogger";
 
 /* ============================================================================
- * Cron Scheduler — NSE Market Hours Only (9:15 AM – 3:20 PM IST, Mon–Fri)
+ * Cron Scheduler — 3:00 PM – 3:15 PM IST Execution Window (Mon–Fri)
  * ============================================================================ */
 
 const tradingCycleCronJob = (): void => {
 
-    // Default schedule: every 15 minutes, Monday–Friday (aligned with 15m ATR candle strategy)
-    cron.schedule(env.cronSchedule ?? "*/15 * * * 1-5", async () => {
+    // Default schedule: every 1 minute during 15:00-15:15 IST, Monday–Friday
+    cron.schedule(env.cronSchedule ?? "*/1 15 * * 1-5", async () => {
 
-        // ── NSE Market Hours Guard ────────────────────────────────────────────
-        if (!isNSEMarketOpen()) {
-            tradingCronLogger.debug("[TradingCron] NSE market closed — skipping cycle");
+        // ── 3:00 PM - 3:15 PM IST Window Guard ──────────────────────────────
+        if (!is3pmTo315pmWindow()) {
+            tradingCronLogger.debug("[TradingCron] Outside 3:00 PM - 3:15 PM trading window — skipping cycle");
             return;
         }
 
@@ -34,7 +34,7 @@ const tradingCycleCronJob = (): void => {
         const CONCURRENCY = 2;
 
         tradingCronLogger.info(`${"=".repeat(80)}`);
-        tradingCronLogger.info(`[TradingCron] ========== CYCLE START ==========`);
+        tradingCronLogger.info(`[TradingCron] ========== CYCLE START (3:00 PM - 3:15 PM) ==========`);
         tradingCronLogger.info(`${"=".repeat(80)}`);
 
         TradingV2.clearCaches();
@@ -116,7 +116,7 @@ const tradingCycleCronJob = (): void => {
         }
     });
 
-    tradingCronLogger.info(`[CronScheduler] Cron scheduled: "${env.cronSchedule ?? "*/15 * * * 1-5"}" (NSE market hours guard active)`);
+    tradingCronLogger.info(`[CronScheduler] Cron scheduled: "${env.cronSchedule ?? "*/1 15 * * 1-5"}" (3:00 PM - 3:15 PM IST guard active)`);
 };
 
 export default tradingCycleCronJob;

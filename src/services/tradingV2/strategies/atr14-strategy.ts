@@ -1,43 +1,48 @@
 // =============================================================================
-// ATR-14 Strategy — Pure 15-Minute Candle True Range Expansion Engine
+// ATR-14 Strategy — 3:00 PM - 3:15 PM Volatility & Direction Engine
 // =============================================================================
-// Strategy Rule:
-//   1. Evaluate exclusively 15-minute candles (sorted oldest -> newest)
-//   2. Compute TR = max(H - L, |H - prevClose|, |L - prevClose|)
-//   3. Compute ATR(14) over 15m candles
-//   4. Breakout Condition: TR > atrMultiplier * ATR(14)
-//   5. Signal Direction:
-//      - 15m Close >= Open (Bullish) -> BUY_CALL (CE)
-//      - 15m Close < Open (Bearish)  -> BUY_PUT (PE)
+// Rules:
+//   1. Execution Window: Strictly 3:00 PM – 3:15 PM IST (15:00 - 15:15 IST)
+//   2. ATR(14): Computed over 14 historical completed 15-minute candles
+//   3. Forming Candle TR: TR of active 3:00 PM candle = max(H - L, |H - prevClose|, |L - prevClose|)
+//   4. Signal Evaluation:
+//      - LONG (Buy CE):
+//          TR >= ATR14 AND Current Price > 3:00 candle Open AND Current Price > Previous Close
+//      - SHORT (Buy PE):
+//          TR >= ATR14 AND Current Price < 3:00 candle Open AND Current Price < Previous Close
 // =============================================================================
 
 import { Candle, TargetCandle, ATRSignalResult, TradingSignal, OptionType } from '../type';
 import { tradingCronLogger, skipTradingLogger } from '../logger';
 
-// ─── NSE Market Hours (IST) ──────────────────────────────────────────────────
+// ─── 3:00 PM - 3:15 PM Trading Window (IST) ──────────────────────────────────
 
-export const NSE_OPEN_HOUR   = 9;
-export const NSE_OPEN_MIN    = 15;
-export const NSE_CLOSE_HOUR  = 15;
-export const NSE_CLOSE_MIN   = 20;  // 3:20 PM cutoff (MIS square-off at 3:30)
+export const TRADING_WINDOW_START_HOUR = 15; // 3:00 PM IST
+export const TRADING_WINDOW_START_MIN  = 0;
+export const TRADING_WINDOW_END_HOUR   = 15; // 3:15 PM IST
+export const TRADING_WINDOW_END_MIN    = 15;
 
-export function isNSEMarketOpen(): boolean {
+export function is3pmTo315pmWindow(): boolean {
     const now = new Date();
     const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     const day = ist.getDay(); // 0=Sun, 6=Sat
     if (day === 0 || day === 6) return false;
 
     const totalMins = ist.getHours() * 60 + ist.getMinutes();
-    const openMins  = NSE_OPEN_HOUR  * 60 + NSE_OPEN_MIN;
-    const closeMins = NSE_CLOSE_HOUR * 60 + NSE_CLOSE_MIN;
+    const startMins = TRADING_WINDOW_START_HOUR * 60 + TRADING_WINDOW_START_MIN;
+    const endMins   = TRADING_WINDOW_END_HOUR * 60 + TRADING_WINDOW_END_MIN;
 
-    return totalMins >= openMins && totalMins <= closeMins;
+    return totalMins >= startMins && totalMins <= endMins;
+}
+
+export function isNSEMarketOpen(): boolean {
+    return is3pmTo315pmWindow();
 }
 
 export function getMinutesToMarketClose(): number {
     const now = new Date();
     const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-    const closeMins = NSE_CLOSE_HOUR * 60 + NSE_CLOSE_MIN;
+    const closeMins = 15 * 60 + 30; // 3:30 PM cutoff
     const nowMins   = ist.getHours() * 60 + ist.getMinutes();
     return closeMins - nowMins;
 }
@@ -58,7 +63,7 @@ export class ATR14Strategy {
     }
 
     /**
-     * Compute ATR(period) using Wilder's smoothing on 15m candles.
+     * Compute ATR(period) using Wilder's smoothing on completed 15m candles.
      */
     static computeATR(candles: Candle[], period: number = 14): number {
         if (candles.length < period + 1) {
@@ -82,12 +87,12 @@ export class ATR14Strategy {
     }
 
     /**
-     * Evaluate trading signal strictly from 15m candles using TR & ATR(14).
+     * Evaluate trading signal strictly from 15m candles using TR, ATR(14), 3:00 Open, and Previous Close.
      */
     static evaluateSignal(
-        candles15m: Candle[],
+        completedCandles15m: Candle[],
         spotPrice: number,
-        atrMultiplier: number = 1.25,
+        formingCandle?: Candle,
         atrPeriod: number = 14
     ): ATRSignalResult {
         const result: ATRSignalResult = {
@@ -100,17 +105,30 @@ export class ATR14Strategy {
             skipReasons: [],
         };
 
-        if (candles15m.length < atrPeriod + 1) {
-            result.skipReasons.push(`Insufficient 15m candles (${candles15m.length}/${atrPeriod + 1})`);
+        if (completedCandles15m.length < atrPeriod + 1) {
+            result.skipReasons.push(`Insufficient completed 15m candles (${completedCandles15m.length}/${atrPeriod + 1})`);
             return result;
         }
 
-        const sorted = [...candles15m].sort((a, b) => a.timestamp - b.timestamp);
-        const latestCandle = sorted[sorted.length - 1];
-        const prevCandle   = sorted[sorted.length - 2];
+        const sorted = [...completedCandles15m].sort((a, b) => a.timestamp - b.timestamp);
+        const prevCandle = sorted[sorted.length - 1]; // Previous 15m candle (e.g. 2:45 PM candle)
 
-        // 1. Calculate TR and ATR(14)
-        const tr    = this.computeTR(latestCandle, prevCandle);
+        // Determine 3:00 PM forming candle Open, High, Low, Close
+        const openPrice  = formingCandle ? formingCandle.open : spotPrice;
+        const highPrice  = formingCandle ? Math.max(formingCandle.high, spotPrice) : Math.max(openPrice, spotPrice);
+        const lowPrice   = formingCandle ? Math.min(formingCandle.low, spotPrice) : Math.min(openPrice, spotPrice);
+        const prevClose  = prevCandle.close;
+
+        // 1. Calculate TR of forming candle & ATR(14) on completed candles
+        const trCandle: Candle = {
+            timestamp: Date.now(),
+            open: openPrice,
+            high: highPrice,
+            low: lowPrice,
+            close: spotPrice,
+            volume: 0,
+        };
+        const tr    = this.computeTR(trCandle, prevCandle);
         const atr14 = this.computeATR(sorted, atrPeriod);
 
         result.tr    = tr;
@@ -121,33 +139,40 @@ export class ATR14Strategy {
             return result;
         }
 
-        const trThreshold = atr14 * atrMultiplier;
-
-        // 2. Volatility Expansion Filter: TR > atrMultiplier * ATR(14)
-        if (tr <= trThreshold) {
+        // 2. Check Volatility Expansion: TR >= ATR(14)
+        if (tr < atr14) {
             result.skipReasons.push(
-                `TR (${tr.toFixed(1)}) <= ${atrMultiplier}x ATR14 (${trThreshold.toFixed(1)}) — no volatility spurt`
+                `TR (${tr.toFixed(1)}) < ATR14 (${atr14.toFixed(1)}) — True Range does not beat ATR(14)`
             );
             return result;
         }
 
-        // 3. Directional Breakout on 15m candle
-        const isBullish = latestCandle.close >= latestCandle.open;
-        const isBearish = latestCandle.close < latestCandle.open;
+        // 3. Directional Rules:
+        // LONG:  TR >= ATR14 AND Current Price > 3:00 Open AND Current Price > Previous Close
+        // SHORT: TR >= ATR14 AND Current Price < 3:00 Open AND Current Price < Previous Close
+        const isLongCondition  = spotPrice > openPrice && spotPrice > prevClose;
+        const isShortCondition = spotPrice < openPrice && spotPrice < prevClose;
 
-        if (isBullish) {
+        if (isLongCondition) {
             result.signal     = 'BULL';
             result.optionType = 'CE';
             result.score      = 100;
             result.reasons.push(
-                `15m Bullish Spurt: TR ${tr.toFixed(1)} > ${atrMultiplier}x ATR14 (${trThreshold.toFixed(1)})`
+                `LONG Signal: TR (${tr.toFixed(1)}) >= ATR14 (${atr14.toFixed(1)}), ` +
+                `Spot (₹${spotPrice.toFixed(2)}) > 3:00 Open (₹${openPrice.toFixed(2)}) & > Prev Close (₹${prevClose.toFixed(2)})`
             );
-        } else if (isBearish) {
+        } else if (isShortCondition) {
             result.signal     = 'BEAR';
             result.optionType = 'PE';
             result.score      = 100;
             result.reasons.push(
-                `15m Bearish Spurt: TR ${tr.toFixed(1)} > ${atrMultiplier}x ATR14 (${trThreshold.toFixed(1)})`
+                `SHORT Signal: TR (${tr.toFixed(1)}) >= ATR14 (${atr14.toFixed(1)}), ` +
+                `Spot (₹${spotPrice.toFixed(2)}) < 3:00 Open (₹${openPrice.toFixed(2)}) & < Prev Close (₹${prevClose.toFixed(2)})`
+            );
+        } else {
+            result.skipReasons.push(
+                `Price directional conflict: Spot ₹${spotPrice.toFixed(2)}, ` +
+                `3:00 Open ₹${openPrice.toFixed(2)}, Prev Close ₹${prevClose.toFixed(2)}`
             );
         }
 
@@ -169,3 +194,4 @@ export class ATR14Strategy {
         return peakPrice * (1 - slPct / 100);
     }
 }
+

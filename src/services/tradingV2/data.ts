@@ -158,21 +158,17 @@ export class Data {
             NUMBER_OF_LOTS:  bot.NUMBER_OF_LOTS  ?? defaults.NUMBER_OF_LOTS  ?? 1,
             EXPIRY_TYPE:     (bot.EXPIRY_TYPE    ?? defaults.EXPIRY_TYPE)    as 'weekly' | 'monthly',
 
-            // Timeframes
-            ENTRY_TIMEFRAME:         bot.ENTRY_TIMEFRAME        ?? defaults.ENTRY_TIMEFRAME        ?? '5minute',
-            CONFIRMATION_TIMEFRAME:  bot.CONFIRMATION_TIMEFRAME ?? defaults.CONFIRMATION_TIMEFRAME ?? '15minute',
-            STRUCTURE_TIMEFRAME:     bot.STRUCTURE_TIMEFRAME    ?? defaults.STRUCTURE_TIMEFRAME    ?? '60minute',
+            // Timeframe (fixed to 15m)
+            TIMEFRAME: '15minute',
 
-            // Strategy
+            // Strategy (3:00 PM - 3:15 PM)
             ATR_PERIOD:          bot.ATR_PERIOD         ?? defaults.ATR_PERIOD         ?? 14,
-            ATR_MULTIPLIER:      bot.ATR_MULTIPLIER     ?? defaults.ATR_MULTIPLIER     ?? 1.25,
-            TARGET_PROFIT_PCT:   bot.TARGET_PROFIT_PCT  ?? defaults.TARGET_PROFIT_PCT  ?? 15,
-            STOP_LOSS_PCT:       bot.STOP_LOSS_PCT      ?? defaults.STOP_LOSS_PCT      ?? 8,
+            TARGET_PROFIT_PCT:   bot.TARGET_PROFIT_PCT  ?? defaults.TARGET_PROFIT_PCT  ?? 7,
+            STOP_LOSS_PCT:       bot.STOP_LOSS_PCT      ?? defaults.STOP_LOSS_PCT      ?? 5,
             MAX_LOSS_PER_DAY:    bot.MAX_LOSS_PER_DAY   ?? defaults.MAX_LOSS_PER_DAY   ?? 2500,
 
             // Trailing SL
             IS_TRAILING_SL_ENABLED: bot.IS_TRAILING_SL_ENABLED ?? defaults.IS_TRAILING_SL_ENABLED ?? true,
-            TRAILING_SL_MULTIPLIER: bot.TRAILING_SL_MULTIPLIER ?? defaults.TRAILING_SL_MULTIPLIER ?? 1.5,
 
             // Orders
             ORDER_TYPE: (bot.ORDER_TYPE ?? defaults.ORDER_TYPE ?? 'MARKET') as 'MARKET' | 'LIMIT',
@@ -182,7 +178,6 @@ export class Data {
             MAX_CONCURRENT_TRADES:    bot.MAX_CONCURRENT_TRADES    ?? defaults.MAX_CONCURRENT_TRADES    ?? 1,
             DAILY_LOSS_LIMIT:         bot.DAILY_LOSS_LIMIT         ?? defaults.DAILY_LOSS_LIMIT         ?? 10,
             IS_WEEKEND_SAFETY_ENABLED: bot.IS_WEEKEND_SAFETY_ENABLED ?? defaults.IS_WEEKEND_SAFETY_ENABLED ?? true,
-            MIN_FINAL_SCORE:          bot.MIN_FINAL_SCORE           ?? defaults.MIN_FINAL_SCORE           ?? 70,
 
             DRY_RUN: bot.DRY_RUN ?? defaults.DRY_RUN ?? true, // default: safe
         });

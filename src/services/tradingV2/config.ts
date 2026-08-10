@@ -19,19 +19,17 @@ export class TradingConfig {
         NUMBER_OF_LOTS:      1,
         EXPIRY_TYPE:         'weekly',
 
-        // Timeframe (Kite interval string)
-        TIMEFRAME: '15minute',
+        // Fixed 15m Timeframe
+        TIMEFRAME:           '15minute',
 
-        // ATR-14 strategy
+        // ATR-14 strategy (3:00 PM - 3:15 PM)
         ATR_PERIOD:           14,
-        ATR_MULTIPLIER:       1.25,  // TR must be > 1.25 × ATR14 to signal
-        TARGET_PROFIT_PCT:    15,    // exit when option premium +15%
-        STOP_LOSS_PCT:        8,     // exit when option premium -8%
+        TARGET_PROFIT_PCT:    7,     // exit when option premium +7%
+        STOP_LOSS_PCT:        5,     // exit when option premium -5%
         MAX_LOSS_PER_DAY:     2500,  // ₹ max daily loss
 
         // Trailing SL
         IS_TRAILING_SL_ENABLED: true,
-        TRAILING_SL_MULTIPLIER: 1.5,
 
         // Order settings
         ORDER_TYPE:  'MARKET',
@@ -41,10 +39,9 @@ export class TradingConfig {
         MAX_CONCURRENT_TRADES:    1,
         DAILY_LOSS_LIMIT:         10, // % of capital
         IS_WEEKEND_SAFETY_ENABLED: true,
-        MIN_FINAL_SCORE:           70, // minimum composite score to enter
 
         // Safety
-        DRY_RUN: true, // ← default: true (paper trading mode)
+        DRY_RUN: true, // default: true (paper trading mode)
     };
 
     /* ─── Config resolver ───────────────────────────────────────────────── */

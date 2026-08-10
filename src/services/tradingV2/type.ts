@@ -22,22 +22,17 @@ export interface ConfigType {
     NUMBER_OF_LOTS: number;
     EXPIRY_TYPE: 'weekly' | 'monthly';
 
-    // Timeframe (Kite interval string)
+    // Timeframe (fixed to 15minute)
     TIMEFRAME: string;              // default: "15minute"
-    ENTRY_TIMEFRAME?: string;        // fallback compatibility
-    CONFIRMATION_TIMEFRAME?: string;
-    STRUCTURE_TIMEFRAME?: string;
 
-    // ATR-14 Strategy Parameters
+    // ATR-14 Strategy Parameters (3:00 PM - 3:15 PM)
     ATR_PERIOD: number;             // default: 14
-    ATR_MULTIPLIER: number;         // TR must be > ATR × this (default: 1.25)
     TARGET_PROFIT_PCT: number;      // exit when premium gains this % (default: 15)
     STOP_LOSS_PCT: number;          // exit when premium drops this % (default: 8)
     MAX_LOSS_PER_DAY: number;       // max daily loss in ₹ (default: 2500)
 
     // Trailing SL
     IS_TRAILING_SL_ENABLED: boolean;
-    TRAILING_SL_MULTIPLIER: number; // trail SL at peak - N × ATR (default: 1.5)
 
     // Order settings
     ORDER_TYPE: 'MARKET' | 'LIMIT';
@@ -47,7 +42,6 @@ export interface ConfigType {
     MAX_CONCURRENT_TRADES: number;  // default: 1
     DAILY_LOSS_LIMIT: number;       // % of capital (default: 10)
     IS_WEEKEND_SAFETY_ENABLED: boolean;
-    MIN_FINAL_SCORE: number;
 
     // Engine flags
     DRY_RUN: boolean;               // true = log only, no real orders
@@ -271,22 +265,16 @@ export interface ActiveSubscribedBot {
     EXPIRY_TYPE: 'weekly' | 'monthly';
 
     // Strategy params
-    ENTRY_TIMEFRAME: string;
-    CONFIRMATION_TIMEFRAME: string;
-    STRUCTURE_TIMEFRAME: string;
     ATR_PERIOD: number;
-    ATR_MULTIPLIER: number;
     TARGET_PROFIT_PCT: number;
     STOP_LOSS_PCT: number;
     MAX_LOSS_PER_DAY: number;
     IS_TRAILING_SL_ENABLED: boolean;
-    TRAILING_SL_MULTIPLIER: number;
     ORDER_TYPE: 'MARKET' | 'LIMIT';
     PRODUCT: 'MIS' | 'NRML';
     MAX_CONCURRENT_TRADES: number;
     DAILY_LOSS_LIMIT: number;
     IS_WEEKEND_SAFETY_ENABLED: boolean;
-    MIN_FINAL_SCORE: number;
     DRY_RUN: boolean;
 }
 

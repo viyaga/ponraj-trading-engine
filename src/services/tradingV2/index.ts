@@ -69,11 +69,11 @@ export class TradingV2 {
 
             const { candles15m, spotPrice } = marketData;
 
-            // ── 4. ATR-14 Signal Evaluation (15m True Range Expansion) ─────
+            // ── 4. ATR-14 Signal Evaluation (3:00 PM Volatility & Direction) ─
             const signalResult = ATR14Strategy.evaluateSignal(
                 candles15m,
                 spotPrice,
-                c.ATR_MULTIPLIER,
+                undefined,
                 c.ATR_PERIOD
             );
 
