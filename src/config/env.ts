@@ -30,6 +30,7 @@ interface EnvConfig {
     payloadUrl: string;
     payloadApiKey: string;
     serverIp: string;
+    isTesting: boolean;
     angelOneApiKey?: string;
     angelOneClientCode?: string;
     angelOnePassword?: string;
@@ -43,6 +44,7 @@ const env: EnvConfig = {
     payloadUrl: process.env.PAYLOAD_URL || 'http://localhost:4000',
     payloadApiKey: process.env.PAYLOAD_API_KEY || '',
     serverIp: process.env.SERVER_IP || '127.0.0.1',
+    isTesting: process.env.IS_TESTING === 'true',
     angelOneApiKey: process.env.ANGEL_ONE_API_KEY || '',
     angelOneClientCode: process.env.ANGEL_ONE_CLIENT_CODE || '',
     angelOnePassword: process.env.ANGEL_ONE_PASSWORD || '',

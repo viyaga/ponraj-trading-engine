@@ -20,8 +20,12 @@ const tradingCycleCronJob = (): void => {
 
         // ── Market Hours Guard ──────────────────────────────────────────────
         if (!isNSETradingHours()) {
-            tradingCronLogger.debug("[TradingCron] Outside NSE market trading hours — skipping cycle");
-            return;
+            if (env.isTesting) {
+                tradingCronLogger.info("[TradingCron] ⚠️ [IS_TESTING=true] Overriding NSE market hours guard — running cycle in testing mode");
+            } else {
+                tradingCronLogger.debug("[TradingCron] Outside NSE market trading hours — skipping cycle");
+                return;
+            }
         }
 
         startCycleLogging();
@@ -34,7 +38,7 @@ const tradingCycleCronJob = (): void => {
         const CONCURRENCY = 2;
 
         tradingCronLogger.info(`${"=".repeat(80)}`);
-        tradingCronLogger.info(`[TradingCron] ========== CYCLE START (3:00 PM - 3:15 PM) ==========`);
+        tradingCronLogger.info(`[TradingCron] ========== CYCLE START (3:00 PM - 3:15 PM${env.isTesting ? " | IS_TESTING" : ""}) ==========`);
         tradingCronLogger.info(`${"=".repeat(80)}`);
 
         TradingV2.clearCaches();

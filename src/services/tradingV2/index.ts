@@ -24,6 +24,7 @@ import { ATR14Strategy, getMinutesToMarketClose, isNSEMarketOpen, is3pmTo315pmWi
 import { UTBotStrategy } from './strategies/ut-bot-strategy';
 import { Data } from './data';
 import { TradeState } from '../../models/tradeState.model';
+import { env } from '../../config';
 import {
     tradingCronLogger,
     tradingCycleErrorLogger,
@@ -48,13 +49,17 @@ export class TradingV2 {
         const cycleId = `cycle-${Date.now().toString(36)}`;
         const tag     = `[TradingCycle:${c.id}:${c.INDEX}]`;
 
-        tradingCronLogger.info(`${tag} ========== START (DRY_RUN: ${c.DRY_RUN}) ==========`);
+        tradingCronLogger.info(`${tag} ========== START (DRY_RUN: ${c.DRY_RUN}${env.isTesting ? ' | IS_TESTING' : ''}) ==========`);
 
         try {
             // ── 1. Market Hours Guard ─────────────────────────────────────
             if (!isNSEMarketOpen()) {
-                skipTradingLogger.info(`${tag} SKIP: NSE market is closed`);
-                return;
+                if (env.isTesting) {
+                    tradingCronLogger.info(`${tag} ⚠️ [IS_TESTING=true] Overriding NSE market hours guard — proceeding with cycle in test mode`);
+                } else {
+                    skipTradingLogger.info(`${tag} SKIP: NSE market is closed`);
+                    return;
+                }
             }
 
             // ── 2. Initialize Kite client for this bot ────────────────────
@@ -114,7 +119,10 @@ export class TradingV2 {
             }
 
             // ── 4B. PRIORITY 2: ATR-14 Strategy (15-Minute 3:00 PM Window) ─
-            if (chosenSignal === 'NONE' && is3pmTo315pmWindow()) {
+            if (chosenSignal === 'NONE' && (is3pmTo315pmWindow() || env.isTesting)) {
+                if (env.isTesting && !is3pmTo315pmWindow()) {
+                    tradingCronLogger.info(`${tag} ⚠️ [IS_TESTING=true] Overriding 3:00 PM - 3:15 PM window for ATR14 evaluation`);
+                }
                 const atrResult = ATR14Strategy.evaluateSignal(
                     candles15m,
                     spotPrice,
@@ -211,7 +219,23 @@ export class TradingV2 {
 
             const quantity = c.LOT_SIZE * (c.NUMBER_OF_LOTS ?? 1);
 
-            // ── 10. DRY RUN: Log only, no real order ──────────────────────
+            // ── 10. DRY RUN / IS_TESTING GUARD: Stop before placing real trade ──
+            if (env.isTesting) {
+                tradesLogger.info(
+                    `${tag} 🛑 [IS_TESTING=true] Trade stopped before placing real order on Zerodha:\n` +
+                    `  Strategy:  ${strategyName}\n` +
+                    `  Symbol:    ${instrument.tradingsymbol}\n` +
+                    `  Quantity:  ${quantity} (${c.NUMBER_OF_LOTS} lot × ${c.LOT_SIZE})\n` +
+                    `  OrderType: ${c.ORDER_TYPE}\n` +
+                    `  Product:   ${c.PRODUCT}\n` +
+                    `  Spot:      ₹${spotPrice.toFixed(2)}\n` +
+                    `  Signal:    ${chosenSignal} (score: ${chosenScore})\n` +
+                    `  ATR:       ${chosenATR.toFixed(2)} pts\n` +
+                    `  Reasons:   ${reasons.join('; ')}`
+                );
+                return;
+            }
+
             if (c.DRY_RUN) {
                 tradesLogger.info(
                     `${tag} [DRY RUN] Would place BUY order (${strategyName}):\n` +
