@@ -167,6 +167,12 @@ export class Data {
             STOP_LOSS_PCT:       bot.STOP_LOSS_PCT      ?? defaults.STOP_LOSS_PCT      ?? 5,
             MAX_LOSS_PER_DAY:    bot.MAX_LOSS_PER_DAY   ?? defaults.MAX_LOSS_PER_DAY   ?? 2500,
 
+            // UT Bot Alerts Strategy (1H Candle - 1st Priority)
+            UT_BOT_ENABLED:         bot.UT_BOT_ENABLED         ?? defaults.UT_BOT_ENABLED         ?? true,
+            UT_BOT_KEY_VALUE:       bot.UT_BOT_KEY_VALUE       ?? defaults.UT_BOT_KEY_VALUE       ?? 1.0,
+            UT_BOT_ATR_PERIOD:      bot.UT_BOT_ATR_PERIOD      ?? defaults.UT_BOT_ATR_PERIOD      ?? 10,
+            UT_BOT_USE_HEIKIN_ASHI: bot.UT_BOT_USE_HEIKIN_ASHI ?? defaults.UT_BOT_USE_HEIKIN_ASHI ?? false,
+
             // Trailing SL
             IS_TRAILING_SL_ENABLED: bot.IS_TRAILING_SL_ENABLED ?? defaults.IS_TRAILING_SL_ENABLED ?? true,
 

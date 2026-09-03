@@ -22,6 +22,19 @@ export const TRADING_WINDOW_START_MIN  = 0;
 export const TRADING_WINDOW_END_HOUR   = 15; // 3:15 PM IST
 export const TRADING_WINDOW_END_MIN    = 15;
 
+export function isNSETradingHours(): boolean {
+    const now = new Date();
+    const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const day = ist.getDay(); // 0=Sun, 6=Sat
+    if (day === 0 || day === 6) return false;
+
+    const totalMins = ist.getHours() * 60 + ist.getMinutes();
+    const marketOpenMins  = 9 * 60 + 15;  // 9:15 AM IST
+    const marketCloseMins = 15 * 60 + 30; // 3:30 PM IST
+
+    return totalMins >= marketOpenMins && totalMins <= marketCloseMins;
+}
+
 export function is3pmTo315pmWindow(): boolean {
     const now = new Date();
     const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -36,7 +49,7 @@ export function is3pmTo315pmWindow(): boolean {
 }
 
 export function isNSEMarketOpen(): boolean {
-    return is3pmTo315pmWindow();
+    return isNSETradingHours();
 }
 
 export function getMinutesToMarketClose(): number {

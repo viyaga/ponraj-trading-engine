@@ -206,14 +206,93 @@ export class AngelMarketDataService {
                 // Save to in-memory cache
                 this.candleCache.set(cacheKey, { candles, timestamp: Date.now() });
 
-                tradingCronLogger.info(`[AngelMarketDataService] Successfully fetched & cached ${candles.length} candles from Angel One for ${indexName}`);
+                tradingCronLogger.info(`[AngelMarketDataService] Successfully fetched & cached ${candles.length} 15m candles from Angel One for ${indexName}`);
                 return candles;
             } else {
-                tradingCronLogger.warn(`[AngelMarketDataService] Angel One returned no candles: ${JSON.stringify(json)}`);
+                tradingCronLogger.warn(`[AngelMarketDataService] Angel One returned no 15m candles: ${JSON.stringify(json)}`);
                 return [];
             }
         } catch (err: any) {
-            tradingCronLogger.error(`[AngelMarketDataService] Failed to fetch Angel One candles: ${err.message}`);
+            tradingCronLogger.error(`[AngelMarketDataService] Failed to fetch Angel One 15m candles: ${err.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * Fetch 1-hour (60-minute) candles from Angel One SmartAPI for UT Bot.
+     */
+    static async get1hCandles(indexName: string): Promise<Candle[]> {
+        const apiKey = env.angelOneApiKey || process.env.ANGEL_ONE_API_KEY;
+        if (!apiKey) {
+            tradingCronLogger.debug('[AngelMarketDataService] ANGEL_ONE_API_KEY not configured.');
+            return [];
+        }
+
+        const symbolToken = ANGEL_TOKENS[indexName.toUpperCase().replace('NSE:', '')] || '99926000';
+        const cacheKey = `${symbolToken}:60minute`;
+
+        // 1. Check in-memory cache
+        const cached = this.candleCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp < this.CACHE_TTL_MS)) {
+            tradingCronLogger.debug(`[AngelMarketDataService] Returning ${cached.candles.length} cached 1h candles for ${indexName}`);
+            return cached.candles;
+        }
+
+        const token = await this.getValidJwtToken(apiKey);
+        const now = new Date();
+        const from = new Date(now.getTime() - 100 * 60 * 60 * 1000); // 100 lookback 1h candles (~15 trading days)
+
+        const body = {
+            exchange: 'NSE',
+            symboltoken: symbolToken,
+            interval: 'ONE_HOUR',
+            fromdate: this.formatDate(from),
+            todate: this.formatDate(now),
+        };
+
+        try {
+            const response = await fetch(
+                'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-UserType': 'USER',
+                        'X-SourceID': 'WEB',
+                        'X-ClientLocalIP': '127.0.0.1',
+                        'X-ClientPublicIP': '127.0.0.1',
+                        'X-MACAddress': 'FE:80:00:00:00:00',
+                        'X-PrivateKey': apiKey,
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                    },
+                    body: JSON.stringify(body),
+                }
+            );
+
+            const json = (await response.json()) as any;
+
+            if (json?.status === true && Array.isArray(json?.data)) {
+                const candles: Candle[] = json.data.map((c: any[]) => ({
+                    timestamp: new Date(c[0]).getTime(),
+                    open: Number(c[1]),
+                    high: Number(c[2]),
+                    low: Number(c[3]),
+                    close: Number(c[4]),
+                    volume: Number(c[5] ?? 0),
+                })).sort((a: Candle, b: Candle) => a.timestamp - b.timestamp);
+
+                // Save to in-memory cache
+                this.candleCache.set(cacheKey, { candles, timestamp: Date.now() });
+
+                tradingCronLogger.info(`[AngelMarketDataService] Successfully fetched & cached ${candles.length} 1h candles from Angel One for ${indexName}`);
+                return candles;
+            } else {
+                tradingCronLogger.warn(`[AngelMarketDataService] Angel One returned no 1h candles: ${JSON.stringify(json)}`);
+                return [];
+            }
+        } catch (err: any) {
+            tradingCronLogger.error(`[AngelMarketDataService] Failed to fetch Angel One 1h candles: ${err.message}`);
             return [];
         }
     }

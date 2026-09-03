@@ -15,10 +15,13 @@ import {
     ConfigType,
     KiteInstrument,
     KitePosition,
+    OptionType,
+    TradingSignal,
 } from './type';
 import { KiteExchange, NIFTY_STEP, BANKNIFTY_STEP } from './kite-exchange';
 import { MarketDataService } from './market-data.service';
-import { ATR14Strategy, getMinutesToMarketClose, isNSEMarketOpen } from './strategies/atr14-strategy';
+import { ATR14Strategy, getMinutesToMarketClose, isNSEMarketOpen, is3pmTo315pmWindow } from './strategies/atr14-strategy';
+import { UTBotStrategy } from './strategies/ut-bot-strategy';
 import { Data } from './data';
 import { TradeState } from '../../models/tradeState.model';
 import {
@@ -61,31 +64,85 @@ export class TradingV2 {
             }
             const kite = new KiteExchange(c.API_KEY, c.ACCESS_TOKEN);
 
-            // ── 3. Fetch market data (15m NIFTY index candles + spot LTP) ─
+            // ── 3. Fetch market data (1h & 15m NIFTY/BANKNIFTY index candles + spot LTP) ─
             const marketData = await MarketDataService.fetchMarketData(
                 c, kite, tradingCronLogger, skipTradingLogger
             );
             if (!marketData) return;
 
-            const { candles15m, spotPrice } = marketData;
+            const { candles15m, candles1h, spotPrice } = marketData;
 
-            // ── 4. ATR-14 Signal Evaluation (3:00 PM Volatility & Direction) ─
-            const signalResult = ATR14Strategy.evaluateSignal(
-                candles15m,
-                spotPrice,
-                undefined,
-                c.ATR_PERIOD
-            );
+            // ── 4. Signal Evaluation: Multi-Strategy Priority Orchestration ──
+            let chosenSignal: TradingSignal = 'NONE';
+            let chosenOptionType: OptionType | null = null;
+            let chosenATR: number = 0;
+            let chosenScore: number = 0;
+            let strategyName: string = '';
+            let reasons: string[] = [];
+            let skipReasons: string[] = [];
 
-            tradingCronLogger.info(
-                `${tag} Signal: ${signalResult.signal} | ` +
-                `ATR14: ${signalResult.atr14.toFixed(1)} | ` +
-                `TR: ${signalResult.tr.toFixed(1)} | ` +
-                `Reasons: ${signalResult.reasons.join('; ')}`
-            );
+            // ── 4A. PRIORITY 1: UT Bot Strategy (1-Hour Timeframe) ────────
+            const isUtBotEnabled = c.UT_BOT_ENABLED ?? true;
+            if (isUtBotEnabled) {
+                const utResult = UTBotStrategy.evaluateSignal(
+                    candles1h,
+                    spotPrice,
+                    {
+                        keyValue: c.UT_BOT_KEY_VALUE ?? 1.0,
+                        atrPeriod: c.UT_BOT_ATR_PERIOD ?? 10,
+                        useHeikinAshi: c.UT_BOT_USE_HEIKIN_ASHI ?? false,
+                    }
+                );
 
-            if (signalResult.skipReasons.length) {
-                skipTradingLogger.info(`${tag} Skip reasons: ${signalResult.skipReasons.join('; ')}`);
+                tradingCronLogger.info(
+                    `${tag} [UTBot 1H] Signal: ${utResult.signal} | ` +
+                    `ATR: ${utResult.atr.toFixed(1)} | ` +
+                    `TrailingStop: ${utResult.trailingStop.toFixed(1)} | ` +
+                    `Reasons: ${utResult.reasons.join('; ')}`
+                );
+
+                if (utResult.signal !== 'NONE') {
+                    chosenSignal = utResult.signal;
+                    chosenOptionType = utResult.optionType;
+                    chosenATR = utResult.atr;
+                    chosenScore = utResult.score;
+                    strategyName = 'UT_BOT_1H';
+                    reasons = utResult.reasons;
+                } else if (utResult.skipReasons.length) {
+                    skipReasons.push(...utResult.skipReasons);
+                }
+            }
+
+            // ── 4B. PRIORITY 2: ATR-14 Strategy (15-Minute 3:00 PM Window) ─
+            if (chosenSignal === 'NONE' && is3pmTo315pmWindow()) {
+                const atrResult = ATR14Strategy.evaluateSignal(
+                    candles15m,
+                    spotPrice,
+                    undefined,
+                    c.ATR_PERIOD
+                );
+
+                tradingCronLogger.info(
+                    `${tag} [ATR14 15m] Signal: ${atrResult.signal} | ` +
+                    `ATR14: ${atrResult.atr14.toFixed(1)} | ` +
+                    `TR: ${atrResult.tr.toFixed(1)} | ` +
+                    `Reasons: ${atrResult.reasons.join('; ')}`
+                );
+
+                if (atrResult.signal !== 'NONE') {
+                    chosenSignal = atrResult.signal;
+                    chosenOptionType = atrResult.optionType;
+                    chosenATR = atrResult.atr14;
+                    chosenScore = atrResult.score;
+                    strategyName = 'ATR14_15M';
+                    reasons = atrResult.reasons;
+                } else if (atrResult.skipReasons.length) {
+                    skipReasons.push(...atrResult.skipReasons);
+                }
+            }
+
+            if (skipReasons.length && chosenSignal === 'NONE') {
+                skipTradingLogger.info(`${tag} Skip reasons: ${skipReasons.join('; ')}`);
             }
 
             // ── 5. Daily loss & open position checks ──────────────────────
@@ -95,7 +152,7 @@ export class TradingV2 {
             ]);
 
             // ── 6. Filter checks (Open position, daily loss, signal present) ──
-            if (signalResult.signal === 'NONE') {
+            if (chosenSignal === 'NONE' || !chosenOptionType) {
                 return;
             }
             if (hasOpenPos) {
@@ -107,14 +164,19 @@ export class TradingV2 {
                 return;
             }
 
+            tradingCronLogger.info(
+                `${tag} 🚀 Selected Signal: ${chosenSignal} (${chosenOptionType}) from [${strategyName}] | ` +
+                `ATR: ${chosenATR.toFixed(1)} | Reasons: ${reasons.join('; ')}`
+            );
+
             // ── 7. Strike selection ───────────────────────────────────────
             const stepSize   = c.INDEX === 'BANKNIFTY' ? BANKNIFTY_STEP : NIFTY_STEP;
-            const optionType = signalResult.optionType!; // 'CE' or 'PE'
-            const strike     = kite.selectStrike(spotPrice, optionType, signalResult.atr14, stepSize);
+            const optionType = chosenOptionType; // 'CE' or 'PE'
+            const strike     = kite.selectStrike(spotPrice, optionType, chosenATR, stepSize);
 
             tradingCronLogger.info(
                 `${tag} Strike selected: ${strike} ${optionType} | ` +
-                `Spot: ${spotPrice.toFixed(2)} | ATR14: ${signalResult.atr14.toFixed(1)}`
+                `Spot: ${spotPrice.toFixed(2)} | ATR: ${chosenATR.toFixed(1)}`
             );
 
             // ── 8. Load NFO instruments (cached) ──────────────────────────
@@ -152,15 +214,15 @@ export class TradingV2 {
             // ── 10. DRY RUN: Log only, no real order ──────────────────────
             if (c.DRY_RUN) {
                 tradesLogger.info(
-                    `${tag} [DRY RUN] Would place BUY order:\n` +
+                    `${tag} [DRY RUN] Would place BUY order (${strategyName}):\n` +
                     `  Symbol:    ${instrument.tradingsymbol}\n` +
                     `  Quantity:  ${quantity} (${c.NUMBER_OF_LOTS} lot × ${c.LOT_SIZE})\n` +
                     `  OrderType: ${c.ORDER_TYPE}\n` +
                     `  Product:   ${c.PRODUCT}\n` +
                     `  Spot:      ₹${spotPrice.toFixed(2)}\n` +
-                    `  Signal:    ${signalResult.signal} (score: ${signalResult.score})\n` +
-                    `  ATR14:     ${signalResult.atr14.toFixed(2)} pts\n` +
-                    `  TR:        ${signalResult.tr.toFixed(2)} pts`
+                    `  Signal:    ${chosenSignal} (score: ${chosenScore})\n` +
+                    `  ATR:       ${chosenATR.toFixed(2)} pts\n` +
+                    `  Reasons:   ${reasons.join('; ')}`
                 );
                 return;
             }
@@ -178,7 +240,7 @@ export class TradingV2 {
             });
 
             const orderId = orderResult.order_id;
-            tradesLogger.info(`${tag} ✅ Order placed: ${orderId} | ${instrument.tradingsymbol} | Qty: ${quantity}`);
+            tradesLogger.info(`${tag} ✅ Order placed: ${orderId} | ${instrument.tradingsymbol} | Qty: ${quantity} | Strategy: ${strategyName}`);
 
             // ── 12. Save trade state ──────────────────────────────────────
             const state = await Data.getOrCreateState(c.id, c.USER_ID, instrument.tradingsymbol);
@@ -187,10 +249,11 @@ export class TradingV2 {
             state.side         = 'buy';
             state.quantity     = quantity;
             state.tradeOutcome = 'pending';
-            state.finalScore   = signalResult.score;
+            state.finalScore   = chosenScore;
+            state.tradingMode  = strategyName;
             await (state as any).save();
 
-            tradingCronLogger.info(`${tag} Trade state saved. Monitoring exit via position P&L.`);
+            tradingCronLogger.info(`${tag} Trade state saved (${strategyName}). Monitoring exit via position P&L.`);
 
         } catch (err: any) {
             tradingCycleErrorLogger.error(`${tag} UNCAUGHT ERROR: ${err.message}`, { stack: err.stack });

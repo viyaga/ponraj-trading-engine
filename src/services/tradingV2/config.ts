@@ -19,7 +19,7 @@ export class TradingConfig {
         NUMBER_OF_LOTS:      1,
         EXPIRY_TYPE:         'weekly',
 
-        // Fixed 15m Timeframe
+        // Timeframe
         TIMEFRAME:           '15minute',
 
         // ATR-14 strategy (3:00 PM - 3:15 PM)
@@ -27,6 +27,12 @@ export class TradingConfig {
         TARGET_PROFIT_PCT:    7,     // exit when option premium +7%
         STOP_LOSS_PCT:        5,     // exit when option premium -5%
         MAX_LOSS_PER_DAY:     2500,  // ₹ max daily loss
+
+        // UT Bot Alerts Strategy (1H candle - 1st Priority)
+        UT_BOT_ENABLED:       true,
+        UT_BOT_KEY_VALUE:     1.0,
+        UT_BOT_ATR_PERIOD:    10,
+        UT_BOT_USE_HEIKIN_ASHI: false,
 
         // Trailing SL
         IS_TRAILING_SL_ENABLED: true,

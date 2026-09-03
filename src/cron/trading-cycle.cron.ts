@@ -6,21 +6,21 @@ import { Data } from "../services/tradingV2/data";
 import { TradingConfig } from "../services/tradingV2/config";
 import { tradingCronLogger } from "../services/tradingV2/logger";
 import { BulkSyncService } from "../services/bulkSync.service";
-import { is3pmTo315pmWindow } from "../services/tradingV2/strategies/atr14-strategy";
+import { isNSETradingHours } from "../services/tradingV2/strategies/atr14-strategy";
 import { startCycleLogging, endCycleLogging } from "../utils/cycleLogger";
 
 /* ============================================================================
- * Cron Scheduler — 3:00 PM – 3:15 PM IST Execution Window (Mon–Fri)
+ * Cron Scheduler — NSE Market Hours Execution Window (Mon–Fri 9:15 AM - 3:30 PM IST)
  * ============================================================================ */
 
 const tradingCycleCronJob = (): void => {
 
-    // Default schedule: every 1 minute during 15:00-15:15 IST, Monday–Friday
-    cron.schedule(env.cronSchedule ?? "*/1 15 * * 1-5", async () => {
+    // Default schedule: every 1 minute during market hours, Monday–Friday
+    cron.schedule(env.cronSchedule ?? "*/1 9-15 * * 1-5", async () => {
 
-        // ── 3:00 PM - 3:15 PM IST Window Guard ──────────────────────────────
-        if (!is3pmTo315pmWindow()) {
-            tradingCronLogger.debug("[TradingCron] Outside 3:00 PM - 3:15 PM trading window — skipping cycle");
+        // ── Market Hours Guard ──────────────────────────────────────────────
+        if (!isNSETradingHours()) {
+            tradingCronLogger.debug("[TradingCron] Outside NSE market trading hours — skipping cycle");
             return;
         }
 

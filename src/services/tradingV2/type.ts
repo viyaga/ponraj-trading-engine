@@ -31,6 +31,12 @@ export interface ConfigType {
     STOP_LOSS_PCT: number;          // exit when premium drops this % (default: 8)
     MAX_LOSS_PER_DAY: number;       // max daily loss in ₹ (default: 2500)
 
+    // UT Bot Alerts Strategy (1H Candle - 1st Priority)
+    UT_BOT_ENABLED?: boolean;       // default: true
+    UT_BOT_KEY_VALUE?: number;      // default: 1.0
+    UT_BOT_ATR_PERIOD?: number;     // default: 10
+    UT_BOT_USE_HEIKIN_ASHI?: boolean;// default: false
+
     // Trailing SL
     IS_TRAILING_SL_ENABLED: boolean;
 
@@ -246,6 +252,16 @@ export interface ATRSignalResult {
     skipReasons: string[];      // reasons the signal was filtered
 }
 
+export interface UTBotSignalResult {
+    signal: TradingSignal;
+    optionType: OptionType | null;
+    atr: number;
+    trailingStop: number;
+    score: number;
+    reasons: string[];
+    skipReasons: string[];
+}
+
 /* ───────────────────────────────────────
    Active Bot (fetched from backend)
 ──────────────────────────────────────── */
@@ -269,6 +285,13 @@ export interface ActiveSubscribedBot {
     TARGET_PROFIT_PCT: number;
     STOP_LOSS_PCT: number;
     MAX_LOSS_PER_DAY: number;
+
+    // UT Bot Alerts Strategy
+    UT_BOT_ENABLED?: boolean;
+    UT_BOT_KEY_VALUE?: number;
+    UT_BOT_ATR_PERIOD?: number;
+    UT_BOT_USE_HEIKIN_ASHI?: boolean;
+
     IS_TRAILING_SL_ENABLED: boolean;
     ORDER_TYPE: 'MARKET' | 'LIMIT';
     PRODUCT: 'MIS' | 'NRML';
