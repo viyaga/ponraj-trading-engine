@@ -343,7 +343,8 @@ export class TradingV2 {
         }
 
         try {
-            await kite.placeOrder({
+            tradesLogger.info(`${tag} ➔ Placing EXIT SELL order on Zerodha: ${state.symbol} | Qty: ${state.quantity} | Reason: ${reason}`);
+            const exitResult = await kite.placeOrder({
                 exchange:         'NFO',
                 tradingsymbol:    state.symbol,
                 transaction_type: 'SELL',
@@ -356,6 +357,7 @@ export class TradingV2 {
 
             const pnlInr = (currentPrice - (state.entryPrice ?? 0)) * state.quantity!;
 
+            state.exitOrderId  = exitResult.order_id;
             state.exitPrice    = currentPrice;
             state.pnl          = pnlInr;
             state.dailyPnl     = (state.dailyPnl ?? 0) + pnlInr;
@@ -365,12 +367,12 @@ export class TradingV2 {
             await state.save();
 
             tradesLogger.info(
-                `${tag} Exit complete. Reason: ${reason} | ` +
+                `${tag} ✔ Exit complete on Zerodha (order_id: ${exitResult.order_id}). Reason: ${reason} | ` +
                 `P&L: ₹${pnlInr.toFixed(2)} | Outcome: ${state.tradeOutcome}`
             );
 
         } catch (err: any) {
-            tradingCycleErrorLogger.error(`${tag} Exit order failed: ${err.message}`);
+            tradingCycleErrorLogger.error(`${tag} ✖ Exit order failed on Zerodha: ${err.message}`, { error: err });
         }
     }
 }

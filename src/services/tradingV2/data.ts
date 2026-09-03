@@ -102,20 +102,31 @@ export class Data {
         // Fetch from backend — exchange is always 'zerodha' now
         const url = `${env.payloadUrl}/api/trading-bots/active-subscribed/zerodha?limit=${limit}&offset=${offset}&serverIp=${env.serverIp}`;
 
+        tradingCronLogger.info(`[fetchTradingConfigs] ➔ Fetching configs from Backend: ${url}`, {
+            limit,
+            offset,
+            serverIp: env.serverIp,
+            backendUrl: env.payloadUrl
+        });
+
         let bots: ActiveSubscribedBot[] = [];
         const maxRetries = 3;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            const startTime = Date.now();
             try {
                 const res = await fetch(url);
+                const duration = Date.now() - startTime;
                 if (!res.ok) {
-                    tradingCronLogger.warn(`[fetchTradingConfigs] HTTP ${res.status} (attempt ${attempt}/${maxRetries})`);
+                    const errorText = await res.text().catch(() => res.statusText);
+                    tradingCronLogger.warn(`[fetchTradingConfigs] ✖ HTTP ${res.status} from Backend (${duration}ms, attempt ${attempt}/${maxRetries}): ${errorText}`);
                 } else {
                     bots = await res.json() as ActiveSubscribedBot[];
+                    tradingCronLogger.info(`[fetchTradingConfigs] ✔ Received response from Backend (${duration}ms): ${bots.length} bots returned`);
                     break;
                 }
             } catch (err: any) {
-                tradingCronLogger.error(`[fetchTradingConfigs] Fetch error (attempt ${attempt}/${maxRetries}): ${err.message}`);
+                tradingCronLogger.error(`[fetchTradingConfigs] ✖ Fetch error (attempt ${attempt}/${maxRetries}): ${err.message}`, { error: err });
             }
             if (attempt < maxRetries) {
                 await new Promise(r => setTimeout(r, attempt * 2000));
@@ -123,16 +134,28 @@ export class Data {
         }
 
         if (!Array.isArray(bots)) {
-            tradingCronLogger.error('[fetchTradingConfigs] Expected array, got:', { bots });
+            tradingCronLogger.error('[fetchTradingConfigs] ✖ Expected array from backend, got:', { bots });
             return [];
         }
 
-        tradingCronLogger.info(`[fetchTradingConfigs] Fetched ${bots.length} active Zerodha bots`);
+        tradingCronLogger.info(`[fetchTradingConfigs] ✔ Processed ${bots.length} active Zerodha bots from Backend`, {
+            botIds: bots.map(b => b.id),
+            indices: bots.map(b => b.INDEX)
+        });
 
         const mergedConfigs: ConfigType[] = bots.map(bot => this.mapBotToConfig(bot));
 
         mergedConfigs.forEach(cfg => {
-            configDebugLogger.debug(`[fetchTradingConfigs] Config for bot ${cfg.id} (${cfg.INDEX} | DRY_RUN: ${cfg.DRY_RUN})`);
+            configDebugLogger.debug(`[fetchTradingConfigs] Config for bot ${cfg.id} (${cfg.INDEX} | DRY_RUN: ${cfg.DRY_RUN})`, {
+                botId: cfg.id,
+                userId: cfg.USER_ID,
+                index: cfg.INDEX,
+                lotSize: cfg.LOT_SIZE,
+                numberOfLots: cfg.NUMBER_OF_LOTS,
+                dryRun: cfg.DRY_RUN,
+                utBotEnabled: cfg.UT_BOT_ENABLED,
+                atrPeriod: cfg.ATR_PERIOD
+            });
         });
 
         this.configCache = { data: mergedConfigs, timestamp: Date.now() };

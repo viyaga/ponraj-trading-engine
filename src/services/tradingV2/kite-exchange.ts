@@ -81,6 +81,8 @@ export class KiteExchange {
         from: Date,
         to: Date
     ): Promise<Candle[]> {
+        tradingCronLogger.info(`[KiteExchange] ➔ Requesting historical candles from Zerodha: ${instrument} (${interval}) from ${from.toISOString()} to ${to.toISOString()}`);
+        const startTime = Date.now();
         try {
             const raw = await this.kc.getHistoricalData(
                 instrument,
@@ -90,9 +92,13 @@ export class KiteExchange {
                 false,  // continuous = false
                 false   // oi = false
             );
-            return parseKiteCandles(raw);
+            const duration = Date.now() - startTime;
+            const candles = parseKiteCandles(raw);
+            tradingCronLogger.info(`[KiteExchange] ✔ Received historical candles from Zerodha: ${instrument} (${candles.length} candles, ${duration}ms)`);
+            return candles;
         } catch (err: any) {
-            tradingCronLogger.error(`[KiteExchange] getCandlestickData failed for ${instrument}: ${err.message}`);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ getCandlestickData failed from Zerodha for ${instrument} (${duration}ms): ${err.message}`, { error: err });
             return [];
         }
     }
@@ -102,11 +108,16 @@ export class KiteExchange {
      * @param instruments  e.g. ["NSE:NIFTY 50", "NFO:NIFTY24JAN25000CE"]
      */
     async getLTP(instruments: string[]): Promise<Record<string, { last_price: number }>> {
+        tradingCronLogger.info(`[KiteExchange] ➔ Requesting LTP from Zerodha for ${instruments.length} instruments: ${instruments.join(', ')}`);
+        const startTime = Date.now();
         try {
             const res = await this.kc.getLTP(instruments);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.info(`[KiteExchange] ✔ Received LTP response from Zerodha (${duration}ms)`, { ltp: res });
             return res as Record<string, { last_price: number }>;
         } catch (err: any) {
-            tradingCronLogger.error(`[KiteExchange] getLTP failed: ${err.message}`);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ getLTP failed from Zerodha (${duration}ms): ${err.message}`, { error: err });
             return {};
         }
     }
@@ -115,10 +126,16 @@ export class KiteExchange {
      * Get full quote data (OHLC, volume, OI, etc.)
      */
     async getQuote(instruments: string[]): Promise<Record<string, KiteQuote>> {
+        tradingCronLogger.info(`[KiteExchange] ➔ Requesting Quote from Zerodha for ${instruments.length} instruments: ${instruments.join(', ')}`);
+        const startTime = Date.now();
         try {
-            return await this.kc.getQuote(instruments) as Record<string, KiteQuote>;
+            const res = await this.kc.getQuote(instruments);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.info(`[KiteExchange] ✔ Received Quote response from Zerodha (${duration}ms) for ${Object.keys(res || {}).length} instruments`);
+            return res as Record<string, KiteQuote>;
         } catch (err: any) {
-            tradingCronLogger.error(`[KiteExchange] getQuote failed: ${err.message}`);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ getQuote failed from Zerodha (${duration}ms): ${err.message}`, { error: err });
             return {};
         }
     }
@@ -130,11 +147,16 @@ export class KiteExchange {
      * NOTE: This is a large file (~30MB for NFO), cache it.
      */
     async getInstruments(exchange: 'NFO' | 'NSE' | 'BSE'): Promise<KiteInstrument[]> {
+        tradingCronLogger.info(`[KiteExchange] ➔ Downloading instrument dump from Zerodha for exchange: ${exchange}`);
+        const startTime = Date.now();
         try {
             const raw = await this.kc.getInstruments([exchange]);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.info(`[KiteExchange] ✔ Received instrument dump from Zerodha for ${exchange} (${raw?.length ?? 0} instruments, ${duration}ms)`);
             return raw as KiteInstrument[];
         } catch (err: any) {
-            tradingCronLogger.error(`[KiteExchange] getInstruments failed: ${err.message}`);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ getInstruments failed from Zerodha (${duration}ms): ${err.message}`, { error: err });
             return [];
         }
     }
@@ -240,25 +262,62 @@ export class KiteExchange {
         if (params.tag)           orderParams.tag           = params.tag;
         if (params.disclosed_quantity) orderParams.disclosed_quantity = params.disclosed_quantity;
 
-        const result = await this.kc.placeOrder(variety, orderParams);
-        return { order_id: String(result.order_id) };
+        tradingCronLogger.info(`[KiteExchange] ➔ Sending ORDER to Zerodha: variety=${variety}`, { orderParams });
+        const startTime = Date.now();
+        try {
+            const result = await this.kc.placeOrder(variety, orderParams);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.info(`[KiteExchange] ✔ Order successfully accepted by Zerodha (${duration}ms): order_id=${result.order_id}`, {
+                order_id: result.order_id,
+                tradingsymbol: params.tradingsymbol,
+                quantity: params.quantity,
+                transaction_type: params.transaction_type
+            });
+            return { order_id: String(result.order_id) };
+        } catch (err: any) {
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ Order placement FAILED by Zerodha (${duration}ms): ${err.message}`, {
+                error: err,
+                orderParams
+            });
+            throw err;
+        }
     }
 
     /**
      * Cancel an open order.
      */
     async cancelOrder(orderId: string, variety: string = 'regular'): Promise<void> {
-        await this.kc.cancelOrder(variety, orderId);
+        tradingCronLogger.info(`[KiteExchange] ➔ Sending Cancel Order to Zerodha: order_id=${orderId}, variety=${variety}`);
+        const startTime = Date.now();
+        try {
+            const res = await this.kc.cancelOrder(variety, orderId);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.info(`[KiteExchange] ✔ Cancel Order response from Zerodha (${duration}ms): order_id=${orderId}`, { res });
+        } catch (err: any) {
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ Cancel Order FAILED on Zerodha (${duration}ms): ${err.message}`, {
+                orderId,
+                error: err
+            });
+            throw err;
+        }
     }
 
     /**
      * Get all orders for today.
      */
     async getOrders(): Promise<KiteOrder[]> {
+        tradingCronLogger.info(`[KiteExchange] ➔ Fetching Orders list from Zerodha`);
+        const startTime = Date.now();
         try {
-            return await this.kc.getOrders() as KiteOrder[];
+            const orders = await this.kc.getOrders() as KiteOrder[];
+            const duration = Date.now() - startTime;
+            tradingCronLogger.info(`[KiteExchange] ✔ Received Orders list from Zerodha (${orders?.length ?? 0} orders, ${duration}ms)`);
+            return orders;
         } catch (err: any) {
-            tradingCronLogger.error(`[KiteExchange] getOrders failed: ${err.message}`);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ getOrders failed from Zerodha (${duration}ms): ${err.message}`, { error: err });
             return [];
         }
     }
@@ -267,10 +326,22 @@ export class KiteExchange {
      * Get full history of a single order.
      */
     async getOrderHistory(orderId: string): Promise<KiteOrder[]> {
+        tradingCronLogger.info(`[KiteExchange] ➔ Fetching Order History from Zerodha: order_id=${orderId}`);
+        const startTime = Date.now();
         try {
-            return await this.kc.getOrderHistory(orderId) as KiteOrder[];
+            const history = await this.kc.getOrderHistory(orderId) as KiteOrder[];
+            const duration = Date.now() - startTime;
+            const latest = history[history.length - 1];
+            tradingCronLogger.info(`[KiteExchange] ✔ Received Order History from Zerodha (${history.length} stages, latest: ${latest?.status}, ${duration}ms)`, {
+                orderId,
+                status: latest?.status,
+                averagePrice: latest?.average_price,
+                filledQuantity: latest?.filled_quantity
+            });
+            return history;
         } catch (err: any) {
-            tradingCronLogger.error(`[KiteExchange] getOrderHistory failed: ${err.message}`);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ getOrderHistory failed from Zerodha for ${orderId} (${duration}ms): ${err.message}`, { error: err });
             return [];
         }
     }
@@ -281,14 +352,22 @@ export class KiteExchange {
      * Get open positions for today.
      */
     async getPositions(): Promise<{ day: KitePosition[]; net: KitePosition[] }> {
+        tradingCronLogger.info(`[KiteExchange] ➔ Fetching Positions from Zerodha`);
+        const startTime = Date.now();
         try {
             const res = await this.kc.getPositions();
+            const duration = Date.now() - startTime;
+            tradingCronLogger.info(`[KiteExchange] ✔ Received Positions from Zerodha (${res?.net?.length ?? 0} net positions, ${duration}ms)`, {
+                netCount: res?.net?.length ?? 0,
+                dayCount: res?.day?.length ?? 0
+            });
             return {
                 day: res.day as KitePosition[],
                 net: res.net as KitePosition[],
             };
         } catch (err: any) {
-            tradingCronLogger.error(`[KiteExchange] getPositions failed: ${err.message}`);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ getPositions failed from Zerodha (${duration}ms): ${err.message}`, { error: err });
             return { day: [], net: [] };
         }
     }

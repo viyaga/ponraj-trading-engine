@@ -2,6 +2,7 @@ import { SyncStatus } from '../models/syncStatus.model';
 import { TradeState } from '../models/tradeState.model';
 import { BotError } from '../models/botError.model';
 import { PayloadClient } from './payload.client';
+import { syncLogger } from './tradingV2/logger';
 import errorLogger from '../utils/errorLogger';
 
 export class BulkSyncService {
@@ -232,12 +233,13 @@ export class BulkSyncService {
      */
     static async runFullSync() {
         if (this.isSyncing) {
-            console.log('[BulkSync] Sync already in progress, skipping...');
+            syncLogger.warn('[BulkSync] Sync already in progress, skipping duplicate invocation...');
             return;
         }
 
         this.isSyncing = true;
         const startTime = Date.now();
+        syncLogger.info('[BulkSync] ➔ Starting full sync with Backend (PNL, Trade States, Bot States)...');
 
         try {
             // 🚀 Run all sync methods in parallel for maximum throughput
@@ -247,12 +249,11 @@ export class BulkSyncService {
                 this.syncBotStates()
             ]);
 
-            if (pnlCount > 0 || tradeCount > 0 || stateCount > 0) {
-                const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-                console.log(`[BulkSync] Success: ${pnlCount} PNL, ${tradeCount} trades, ${stateCount} bot states in ${duration}s`);
-            }
+            const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+            syncLogger.info(`[BulkSync] ✔ Full Sync completed in ${duration}s: ${pnlCount} PNL, ${tradeCount} trades, ${stateCount} bot states`);
         } catch (err) {
-            errorLogger.error('[BulkSync] Critical Error:', err);
+            errorLogger.error('[BulkSync] Critical Error during sync:', err);
+            syncLogger.error('[BulkSync] ✖ Critical Error during backend sync:', { error: err });
         } finally {
             this.isSyncing = false;
         }
