@@ -179,12 +179,20 @@ export class TradingV2 {
                 return;
             }
             if (hasOpenPos) {
-                skipTradingLogger.info(`${tag} SKIP: Open position already exists for this bot (cannot open multiple concurrent positions)`);
-                return;
+                if (env.isTesting) {
+                    tradingCronLogger.warn(`${tag} ⚠️ [IS_TESTING=true] Overriding open position check (open position exists) — continuing test cycle`);
+                } else {
+                    skipTradingLogger.info(`${tag} SKIP: Open position already exists for this bot (cannot open multiple concurrent positions)`);
+                    return;
+                }
             }
             if (dailyLossHit) {
-                skipTradingLogger.info(`${tag} SKIP: Max daily loss limit (₹${c.MAX_LOSS_PER_DAY}) reached for bot ${c.id}`);
-                return;
+                if (env.isTesting) {
+                    tradingCronLogger.warn(`${tag} ⚠️ [IS_TESTING=true] Overriding max daily loss limit (limit ₹${c.MAX_LOSS_PER_DAY} reached) — continuing test cycle`);
+                } else {
+                    skipTradingLogger.info(`${tag} SKIP: Max daily loss limit (₹${c.MAX_LOSS_PER_DAY}) reached for bot ${c.id}`);
+                    return;
+                }
             }
 
             tradingCronLogger.info(
@@ -429,8 +437,8 @@ export class TradingV2 {
     ): Promise<void> {
         const tag = `[Exit:${c.id}]`;
 
-        if (c.DRY_RUN) {
-            tradesLogger.info(`${tag} [DRY RUN] Would exit ${state.symbol} @ ₹${currentPrice} (${reason})`);
+        if (env.isTesting || c.DRY_RUN) {
+            tradesLogger.info(`${tag} [${env.isTesting ? 'IS_TESTING' : 'DRY RUN'}] Would exit ${state.symbol} @ ₹${currentPrice} (${reason})`);
             return;
         }
 
