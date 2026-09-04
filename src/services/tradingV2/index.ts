@@ -634,20 +634,101 @@ export class TradingV2 {
         const history = await kite.getOrderHistory(state.entryOrderId);
         const latest  = history ? history[history.length - 1] : null;
 
-        // If entry not yet filled, skip
+        // If broker rejected or cancelled order: mark trade closed/cancelled, NO GTT
+        if (latest && (latest.status === 'REJECTED' || latest.status === 'CANCELLED')) {
+            tradingCronLogger.error(
+                `${tag} ✖ Entry order ${state.entryOrderId} was ${latest.status}: ${latest.status_message || 'Broker rejected/cancelled'}. ` +
+                `Marking trade as closed (cancelled) and skipping GTT.`
+            );
+            state.status = 'closed';
+            state.tradeOutcome = 'cancelled';
+            await (state as any).save();
+            return;
+        }
+
+        // If entry not yet filled (e.g. AMO REQ RECEIVED, OPEN, TRIGGER PENDING), wait:
         if (!latest || latest.status !== 'COMPLETE') {
             tradingCronLogger.info(
-                `${tag} ⏳ Entry order ${state.entryOrderId} is not yet COMPLETE (status: ${latest?.status ?? 'UNKNOWN'}). Skipping exit evaluation until filled.`
+                `${tag} ⏳ Entry order ${state.entryOrderId} is pending fill (status: ${latest?.status ?? 'UNKNOWN'}). Skipping exit evaluation until filled.`
             );
             return;
         }
 
-        // Get entry price
-        const entryPrice = latest.average_price;
-        if (!state.entryPrice && entryPrice) {
-            state.entryPrice = entryPrice;
+        // Execution confirmed COMPLETE: Reconcile actual execution price & quantity
+        const actualEntryPrice = Number(latest.average_price);
+        const actualQuantity = Number(latest.filled_quantity);
+        let stateNeedsSave = false;
+
+        if (state.entryPrice !== actualEntryPrice || state.quantity !== actualQuantity) {
+            state.entryPrice = actualEntryPrice;
+            state.quantity = actualQuantity;
+            stateNeedsSave = true;
+            tradingCronLogger.info(
+                `${tag} ✔ Reconciled execution from Zerodha: Qty=${actualQuantity}, AvgPrice=₹${actualEntryPrice.toFixed(2)}`
+            );
+        }
+
+        // Recalculate TP and SL strictly from actual confirmed fill price
+        const effectiveTP = (state as any).effectiveTP ?? c.TARGET_PROFIT_PCT;
+        const effectiveSL = (state as any).effectiveSL ?? c.STOP_LOSS_PCT;
+        const roundTick = (val: number) => Math.round(val * 20) / 20;
+        const targetPrice = roundTick(actualEntryPrice * (1 + effectiveTP / 100));
+        const stopPrice   = roundTick(actualEntryPrice * (1 - effectiveSL / 100));
+        const slLimitPrice = roundTick(stopPrice * 0.99);
+
+        if (state.tpPrice !== targetPrice || state.slPrice !== stopPrice) {
+            state.tpPrice = targetPrice;
+            state.slPrice = stopPrice;
+            stateNeedsSave = true;
+        }
+
+        // Place GTT OCO if not yet created (e.g. for AMO fills or recovered trades)
+        if (!state.stopLossOrderId) {
+            try {
+                tradingCronLogger.info(
+                    `${tag} ➔ Placing native GTT OCO (TP/SL) on Zerodha for filled order ${state.entryOrderId}: ` +
+                    `SL Trigger=₹${stopPrice} (Limit=₹${slLimitPrice}), TP Trigger/Limit=₹${targetPrice}...`
+                );
+                const gttResult = await kite.placeGTT({
+                    trigger_type:   'two-leg',
+                    tradingsymbol:  state.symbol,
+                    exchange:       'NFO',
+                    trigger_values: [stopPrice, targetPrice],
+                    last_price:     actualEntryPrice,
+                    orders: [
+                        {
+                            transaction_type: 'SELL',
+                            quantity:         actualQuantity,
+                            order_type:       'LIMIT',
+                            product:          c.PRODUCT,
+                            price:            slLimitPrice,
+                        },
+                        {
+                            transaction_type: 'SELL',
+                            quantity:         actualQuantity,
+                            order_type:       'LIMIT',
+                            product:          c.PRODUCT,
+                            price:            targetPrice,
+                        },
+                    ],
+                });
+                state.stopLossOrderId = String(gttResult.trigger_id);
+                stateNeedsSave = true;
+                tradesLogger.info(
+                    `${tag} 🎯 Zerodha GTT OCO (TP + SL) order placed successfully! ` +
+                    `Trigger ID: ${state.stopLossOrderId} | SL: ₹${stopPrice} (-${effectiveSL}%) | TP: ₹${targetPrice} (+${effectiveTP}%)`
+                );
+            } catch (gttErr: any) {
+                tradesLogger.error(
+                    `${tag} 🚨 Position filled (Qty: ${actualQuantity} @ ₹${actualEntryPrice}), ` +
+                    `but GTT placement failed on Zerodha: ${gttErr.message}. ` +
+                    `Engine will actively monitor and execute TP/SL via software cron.`
+                );
+            }
+        }
+
+        if (stateNeedsSave) {
             await (state as any).save();
-            tradingCronLogger.info(`${tag} ✔ Synced entry price from broker order fill: ₹${entryPrice}`);
         }
 
         // Get current option LTP
@@ -660,27 +741,20 @@ export class TradingV2 {
             tradingCronLogger.warn(`${tag} ⚠️ Failed to fetch live LTP for ${fullSymbol}: ${ltpErr.message}`);
         }
 
-        if (!currentPrice || !entryPrice) {
+        if (!currentPrice || !actualEntryPrice) {
             tradingCronLogger.warn(
-                `${tag} ⚠️ Unable to evaluate exit conditions: currentPrice=₹${currentPrice}, entryPrice=₹${entryPrice ?? state.entryPrice}`
+                `${tag} ⚠️ Unable to evaluate exit conditions: currentPrice=₹${currentPrice}, entryPrice=₹${actualEntryPrice}`
             );
             return;
         }
 
-        const pnlPct = ATR14Strategy.calculatePnLPct(entryPrice, currentPrice);
-
-        // Resolve effective TP / SL: prefer values persisted on the state (set at entry),
-        // fall back to current bot config values for legacy open trades.
-        const effectiveTP = (state as any).effectiveTP ?? c.TARGET_PROFIT_PCT;
-        const effectiveSL = (state as any).effectiveSL ?? c.STOP_LOSS_PCT;
-        const targetPrice = entryPrice * (1 + effectiveTP / 100);
-        const stopPrice   = entryPrice * (1 - effectiveSL / 100);
-        const unrealizedPnlInr = (currentPrice - entryPrice) * (state.quantity ?? 1);
+        const pnlPct = ATR14Strategy.calculatePnLPct(actualEntryPrice, currentPrice);
+        const unrealizedPnlInr = (currentPrice - actualEntryPrice) * (state.quantity ?? 1);
 
         tradingCronLogger.info(
             `${tag} 📊 Open Position Health Check:\n` +
             `  Symbol:          ${state.symbol} (${state.quantity} units)\n` +
-            `  Entry Price:     ₹${entryPrice.toFixed(2)}\n` +
+            `  Entry Price:     ₹${actualEntryPrice.toFixed(2)}\n` +
             `  Current LTP:     ₹${currentPrice.toFixed(2)}\n` +
             `  Unrealized P&L:  ₹${unrealizedPnlInr.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)\n` +
             `  Target Profit:   +${effectiveTP}% → exit above ₹${targetPrice.toFixed(2)}\n` +
