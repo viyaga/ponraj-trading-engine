@@ -226,72 +226,85 @@ export class AngelMarketDataService {
             todate: this.formatDate(now),
         };
 
-        try {
-            tradingCronLogger.info(`[AngelMarketDataService] ➔ Fetching 15m candles from Angel One for ${indexName} (token: ${symbolToken})`, {
-                hasToken: Boolean(token),
-                tokenPrefix: token ? `${token.slice(0, 10)}...` : 'None',
-                requestBody: body,
-            });
-            const startTime = Date.now();
-            const response = await fetch(
-                'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'X-UserType': 'USER',
-                        'X-SourceID': 'WEB',
-                        'X-ClientLocalIP': '127.0.0.1',
-                        'X-ClientPublicIP': '127.0.0.1',
-                        'X-MACAddress': 'FE:80:00:00:00:00',
-                        'X-PrivateKey': apiKey,
-                        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-                    },
-                    body: JSON.stringify(body),
-                }
-            );
-
-            const duration = Date.now() - startTime;
-            const text = await response.text();
-
-            let json: any;
+        // Try up to 2 attempts with backoff if rate-limited
+        for (let attempt = 1; attempt <= 2; attempt++) {
             try {
-                json = JSON.parse(text);
-            } catch (parseErr: any) {
-                tradingCronLogger.error(`[AngelMarketDataService] ✖ Failed to parse 15m candles response as JSON (${duration}ms): ${text.slice(0, 200)}`, {
-                    status: response.status,
-                    rawBody: text,
+                tradingCronLogger.info(`[AngelMarketDataService] ➔ Fetching 15m candles from Angel One for ${indexName} (token: ${symbolToken}, attempt: ${attempt})`, {
+                    hasToken: Boolean(token),
+                    tokenPrefix: token ? `${token.slice(0, 10)}...` : 'None',
+                    requestBody: body,
                 });
+                const startTime = Date.now();
+                const response = await fetch(
+                    'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-UserType': 'USER',
+                            'X-SourceID': 'WEB',
+                            'X-ClientLocalIP': '127.0.0.1',
+                            'X-ClientPublicIP': '127.0.0.1',
+                            'X-MACAddress': 'FE:80:00:00:00:00',
+                            'X-PrivateKey': apiKey,
+                            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                        },
+                        body: JSON.stringify(body),
+                    }
+                );
+
+                const duration = Date.now() - startTime;
+                const text = await response.text();
+
+                let json: any;
+                try {
+                    json = JSON.parse(text);
+                } catch (parseErr: any) {
+                    tradingCronLogger.warn(`[AngelMarketDataService] ⚠️ 15m candles response non-JSON (HTTP ${response.status}, ${duration}ms): ${text.slice(0, 100)}`);
+                    if (attempt < 2) {
+                        await new Promise((resolve) => setTimeout(resolve, 1000));
+                        continue;
+                    }
+                    return cached?.candles ?? [];
+                }
+
+                if (json?.status === true && Array.isArray(json?.data)) {
+                    const candles: Candle[] = json.data.map((c: any[]) => ({
+                        timestamp: new Date(c[0]).getTime(),
+                        open: Number(c[1]),
+                        high: Number(c[2]),
+                        low: Number(c[3]),
+                        close: Number(c[4]),
+                        volume: Number(c[5] ?? 0),
+                    })).sort((a: Candle, b: Candle) => a.timestamp - b.timestamp);
+
+                    // Save to in-memory cache
+                    this.candleCache.set(cacheKey, { candles, timestamp: Date.now() });
+
+                    tradingCronLogger.info(`[AngelMarketDataService] ✔ Successfully fetched & cached ${candles.length} 15m candles from Angel One for ${indexName} (${duration}ms)`);
+                    return candles;
+                } else {
+                    tradingCronLogger.warn(`[AngelMarketDataService] ✖ Angel One returned non-success for 15m candles (${duration}ms):`, {
+                        status: response.status,
+                        response: json,
+                    });
+                    if (attempt < 2) {
+                        await new Promise((resolve) => setTimeout(resolve, 1000));
+                        continue;
+                    }
+                    return cached?.candles ?? [];
+                }
+            } catch (err: any) {
+                tradingCronLogger.error(`[AngelMarketDataService] ✖ Failed to fetch Angel One 15m candles: ${err.message}`, { error: err });
+                if (attempt < 2) {
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                    continue;
+                }
                 return cached?.candles ?? [];
             }
-
-            if (json?.status === true && Array.isArray(json?.data)) {
-                const candles: Candle[] = json.data.map((c: any[]) => ({
-                    timestamp: new Date(c[0]).getTime(),
-                    open: Number(c[1]),
-                    high: Number(c[2]),
-                    low: Number(c[3]),
-                    close: Number(c[4]),
-                    volume: Number(c[5] ?? 0),
-                })).sort((a: Candle, b: Candle) => a.timestamp - b.timestamp);
-
-                // Save to in-memory cache
-                this.candleCache.set(cacheKey, { candles, timestamp: Date.now() });
-
-                tradingCronLogger.info(`[AngelMarketDataService] ✔ Successfully fetched & cached ${candles.length} 15m candles from Angel One for ${indexName} (${duration}ms)`);
-                return candles;
-            } else {
-                tradingCronLogger.warn(`[AngelMarketDataService] ✖ Angel One returned non-success for 15m candles (${duration}ms):`, {
-                    status: response.status,
-                    response: json,
-                });
-                return cached?.candles ?? [];
-            }
-        } catch (err: any) {
-            tradingCronLogger.error(`[AngelMarketDataService] ✖ Failed to fetch Angel One 15m candles: ${err.message}`, { error: err });
-            return cached?.candles ?? [];
         }
+        return cached?.candles ?? [];
     }
 
     /**

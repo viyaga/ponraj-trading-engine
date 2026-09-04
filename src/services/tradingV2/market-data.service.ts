@@ -188,11 +188,10 @@ export class MarketDataService {
             logger.info(`${tag} ➔ Starting market data fetch (15m candles, 1h candles, spot price)...`);
             const startTime = Date.now();
 
-            const [candles15m, candles1h, spotPrice] = await Promise.all([
-                this.get15mCandles(kite, c.INDEX),
-                this.get1hCandles(kite, c.INDEX),
-                this.getSpotPrice(kite, c.INDEX),
-            ]);
+            // Fetch sequentially with rate-limit delays instead of firing simultaneously via Promise.all
+            const candles15m = await this.get15mCandles(kite, c.INDEX);
+            const candles1h  = await this.get1hCandles(kite, c.INDEX);
+            const spotPrice  = await this.getSpotPrice(kite, c.INDEX);
 
             const elapsed = Date.now() - startTime;
             logger.info(
