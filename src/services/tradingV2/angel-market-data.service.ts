@@ -171,20 +171,31 @@ export class AngelMarketDataService {
     }
 
     /**
-     * Helper to format Date into Angel One's required format: "YYYY-MM-DD HH:mm"
+     * Helper to format Date into Angel One's required format in IST (Indian Standard Time): "YYYY-MM-DD HH:mm"
+     * Angel One SmartAPI expects IST timestamp strings regardless of server locale / UTC.
      */
     private static formatDate(date: Date): string {
-        const pad = (n: number) => String(n).padStart(2, '0');
-        const year = date.getFullYear();
-        const month = pad(date.getMonth() + 1);
-        const day = pad(date.getDate());
-        const hours = pad(date.getHours());
-        const minutes = pad(date.getMinutes());
-        return `${year}-${month}-${day} ${hours}:${minutes}`;
+        const parts = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Kolkata',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        }).formatToParts(date);
+
+        const map: Record<string, string> = {};
+        for (const p of parts) {
+            map[p.type] = p.value;
+        }
+
+        return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}`;
     }
 
     /**
      * Fetch 15-minute candles from Angel One SmartAPI.
+     * Lookback: 10 calendar days (~250 15m candles) to guarantee sufficient completed trading candles.
      */
     static async get15mCandles(indexName: string): Promise<Candle[]> {
         const apiKey = env.angelOneApiKey || process.env.ANGEL_ONE_API_KEY;
@@ -196,16 +207,16 @@ export class AngelMarketDataService {
         const symbolToken = ANGEL_TOKENS[indexName.toUpperCase().replace('NSE:', '')] || '99926000';
         const cacheKey = `${symbolToken}:15minute`;
 
-        // 1. Check in-memory cache
+        // 1. Check in-memory cache (valid for 10 minutes)
         const cached = this.candleCache.get(cacheKey);
-        if (cached && (Date.now() - cached.timestamp < this.CACHE_TTL_MS)) {
-            tradingCronLogger.debug(`[AngelMarketDataService] Returning ${cached.candles.length} cached candles for ${indexName}`);
+        if (cached && (Date.now() - cached.timestamp < this.CACHE_TTL_MS) && cached.candles.length >= 15) {
+            tradingCronLogger.debug(`[AngelMarketDataService] Returning ${cached.candles.length} cached 15m candles for ${indexName}`);
             return cached.candles;
         }
 
         const token = await this.getValidJwtToken(apiKey);
         const now = new Date();
-        const from = new Date(now.getTime() - 60 * 15 * 60 * 1000); // 60 lookback 15m candles
+        const from = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000); // 10 days lookback
 
         const body = {
             exchange: 'NSE',
@@ -252,7 +263,7 @@ export class AngelMarketDataService {
                     status: response.status,
                     rawBody: text,
                 });
-                return [];
+                return cached?.candles ?? [];
             }
 
             if (json?.status === true && Array.isArray(json?.data)) {
@@ -275,16 +286,17 @@ export class AngelMarketDataService {
                     status: response.status,
                     response: json,
                 });
-                return [];
+                return cached?.candles ?? [];
             }
         } catch (err: any) {
             tradingCronLogger.error(`[AngelMarketDataService] ✖ Failed to fetch Angel One 15m candles: ${err.message}`, { error: err });
-            return [];
+            return cached?.candles ?? [];
         }
     }
 
     /**
      * Fetch 1-hour (60-minute) candles from Angel One SmartAPI for UT Bot.
+     * Lookback: 30 calendar days (~180 1h candles) to guarantee sufficient completed trading candles.
      */
     static async get1hCandles(indexName: string): Promise<Candle[]> {
         const apiKey = env.angelOneApiKey || process.env.ANGEL_ONE_API_KEY;
@@ -296,16 +308,19 @@ export class AngelMarketDataService {
         const symbolToken = ANGEL_TOKENS[indexName.toUpperCase().replace('NSE:', '')] || '99926000';
         const cacheKey = `${symbolToken}:60minute`;
 
-        // 1. Check in-memory cache
+        // 1. Check in-memory cache (valid for 10 minutes)
         const cached = this.candleCache.get(cacheKey);
-        if (cached && (Date.now() - cached.timestamp < this.CACHE_TTL_MS)) {
+        if (cached && (Date.now() - cached.timestamp < this.CACHE_TTL_MS) && cached.candles.length >= 12) {
             tradingCronLogger.debug(`[AngelMarketDataService] Returning ${cached.candles.length} cached 1h candles for ${indexName}`);
             return cached.candles;
         }
 
+        // Small 350ms delay to prevent exceeding Angel One's 3 requests/sec rate limit when called right after 15m
+        await new Promise((resolve) => setTimeout(resolve, 350));
+
         const token = await this.getValidJwtToken(apiKey);
         const now = new Date();
-        const from = new Date(now.getTime() - 100 * 60 * 60 * 1000); // 100 lookback 1h candles (~15 trading days)
+        const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days lookback
 
         const body = {
             exchange: 'NSE',
@@ -352,7 +367,7 @@ export class AngelMarketDataService {
                     status: response.status,
                     rawBody: text,
                 });
-                return [];
+                return cached?.candles ?? [];
             }
 
             if (json?.status === true && Array.isArray(json?.data)) {
@@ -375,11 +390,11 @@ export class AngelMarketDataService {
                     status: response.status,
                     response: json,
                 });
-                return [];
+                return cached?.candles ?? [];
             }
         } catch (err: any) {
             tradingCronLogger.error(`[AngelMarketDataService] ✖ Failed to fetch Angel One 1h candles: ${err.message}`, { error: err });
-            return [];
+            return cached?.candles ?? [];
         }
     }
 

@@ -28,9 +28,9 @@ export class MarketDataService {
     private static priceCache  = new Map<string, Promise<number>>();
 
     static clearCaches(): void {
-        this.candleCache.clear();
+        // Clear price cache every minute to get fresh LTP, but keep candle cache across cycles
         this.priceCache.clear();
-        tradingCronLogger.debug('[MarketDataService] Caches cleared');
+        tradingCronLogger.debug('[MarketDataService] Spot price cache cleared (candle cache preserved)');
     }
 
     /**
