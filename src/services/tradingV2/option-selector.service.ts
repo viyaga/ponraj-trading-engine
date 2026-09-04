@@ -20,6 +20,7 @@
 import { KiteInstrument, OptionType, ConfigType } from './type';
 import { KiteExchange } from './kite-exchange';
 import { tradingCronLogger, tradingCycleErrorLogger } from './logger';
+import { AngelMarketDataService } from './angel-market-data.service';
 import env from '../../config/env';
 
 // How many strikes on each side of ATM to check (e.g. 6 = ATM, ATM±50, ATM±100, ..., ATM±300)
@@ -183,20 +184,28 @@ export class OptionSelectorService {
                 .join('\n')
         );
 
-        // 4. Fetch live LTP for all candidates via Zerodha getLTP (batched)
+        // 4. Fetch live LTP for all candidates:
+        // Prefers Angel One SmartAPI (100% Free & eliminates Zerodha PermissionException),
+        // falling back to Zerodha Kite getLTP().
         tradingCronLogger.info(
-            `${tag} [OptionSelector] Fetching live LTPs from Zerodha for ${perStrike.length} symbols...`
+            `${tag} [OptionSelector] Fetching live LTPs for ${perStrike.length} candidate options (trying Angel One SmartAPI first)...`
         );
-        const ltpMap = await this.fetchLTPsFromKite(kite, perStrike, tag);
+        let ltpMap = await this.fetchLTPsFromAngelOne(perStrike, tag);
+
+        if (!ltpMap.size) {
+            tradingCronLogger.warn(
+                `${tag} [OptionSelector] ⚠️  Angel One returned no LTPs, attempting Zerodha Kite fallback...`
+            );
+            ltpMap = await this.fetchLTPsFromKite(kite, perStrike, tag);
+        }
 
         tradingCronLogger.info(
-            `${tag} [OptionSelector] LTP fetch complete: ${ltpMap.size}/${perStrike.length} prices received`
+            `${tag} [OptionSelector] LTP fetch complete: ${ltpMap.size}/${perStrike.length} prices available`
         );
 
         if (!ltpMap.size) {
             tradingCronLogger.warn(
-                `${tag} [OptionSelector] ⚠️  Zerodha returned no LTPs for any candidate. ` +
-                `This may indicate a Kite API permission issue or a market holiday.`
+                `${tag} [OptionSelector] ⚠️  No LTPs returned across both Angel One and Zerodha for candidate options.`
             );
             return null;
         }
@@ -409,6 +418,45 @@ export class OptionSelectorService {
             `${tag} [OptionSelector] LTP fetch total: ${result.size}/${symbols.length} prices in map`
         );
 
+        return result;
+    }
+
+    /**
+     * Batch-fetch LTPs from Angel One SmartAPI Quote API.
+     * Resolves Angel One symbol tokens for the candidate instruments.
+     * Returns a map of "NFO:tradingsymbol" -> last_price.
+     */
+    private static async fetchLTPsFromAngelOne(
+        instruments: KiteInstrument[],
+        tag: string
+    ): Promise<Map<string, number>> {
+        const result = new Map<string, number>();
+        try {
+            const symbols = instruments.map(ins => ins.tradingsymbol);
+            const tokens = await AngelMarketDataService.resolveSymbolTokens(symbols);
+
+            if (!tokens.length) {
+                tradingCronLogger.warn(`${tag} [OptionSelector] Could not resolve any Angel One tokens for candidates.`);
+                return result;
+            }
+
+            const ltpMap = await AngelMarketDataService.getOptionsLTP(tokens);
+
+            for (const ins of instruments) {
+                const ltp = ltpMap.get(`NFO:${ins.tradingsymbol}`) ?? ltpMap.get(ins.tradingsymbol);
+                if (ltp != null && ltp > 0) {
+                    result.set(`NFO:${ins.tradingsymbol}`, ltp);
+                }
+            }
+
+            tradingCronLogger.info(
+                `${tag} [OptionSelector] Angel One option LTPs: ${result.size}/${instruments.length} prices successfully received`
+            );
+        } catch (err: any) {
+            tradingCronLogger.warn(
+                `${tag} [OptionSelector] ⚠️ fetchLTPsFromAngelOne exception: ${err.message}`
+            );
+        }
         return result;
     }
 }

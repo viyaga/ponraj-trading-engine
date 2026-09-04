@@ -497,6 +497,89 @@ export class AngelMarketDataService {
     }
 
 
+    private static tokenCache = new Map<string, string>(); // tradingsymbol -> symbolToken
+
+    /**
+     * Batch-resolve Angel One symbol tokens for a list of NFO trading symbols.
+     * Uses in-memory cache first, queries Angel One searchScrip for uncached symbols.
+     */
+    static async resolveSymbolTokens(
+        tradingsymbols: string[]
+    ): Promise<Array<{ symbolToken: string; tradingsymbol: string }>> {
+        const result: Array<{ symbolToken: string; tradingsymbol: string }> = [];
+        const toFetch: string[] = [];
+
+        for (const sym of tradingsymbols) {
+            if (this.tokenCache.has(sym)) {
+                result.push({ symbolToken: this.tokenCache.get(sym)!, tradingsymbol: sym });
+            } else {
+                toFetch.push(sym);
+            }
+        }
+
+        if (toFetch.length === 0) {
+            return result;
+        }
+
+        const apiKey = env.angelOneApiKey || process.env.ANGEL_ONE_API_KEY;
+        if (!apiKey) return result;
+
+        const jwtToken = await this.getValidJwtToken(apiKey);
+        if (!jwtToken) return result;
+
+        tradingCronLogger.info(
+            `[AngelMarketDataService] Resolving Angel One symbol tokens for ${toFetch.length} instruments (${result.length} already cached)...`
+        );
+
+        // Resolve concurrently in small batches
+        const promises = toFetch.map(async (sym) => {
+            try {
+                const res = await fetch('https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/searchScrip', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-UserType': 'USER',
+                        'X-SourceID': 'WEB',
+                        'X-ClientLocalIP': '127.0.0.1',
+                        'X-ClientPublicIP': '127.0.0.1',
+                        'X-MACAddress': 'FE:80:00:00:00:00',
+                        'X-PrivateKey': apiKey,
+                        'Authorization': `Bearer ${jwtToken}`,
+                    },
+                    body: JSON.stringify({
+                        exchange: 'NFO',
+                        searchscrip: sym,
+                    }),
+                });
+
+                const json: any = await res.json();
+                if (json?.status === true && Array.isArray(json?.data) && json.data.length > 0) {
+                    const match = json.data.find((d: any) => d.tradingsymbol === sym) || json.data[0];
+                    if (match?.symboltoken) {
+                        const token = String(match.symboltoken);
+                        this.tokenCache.set(sym, token);
+                        return { symbolToken: token, tradingsymbol: sym };
+                    }
+                }
+            } catch (err: any) {
+                tradingCronLogger.warn(`[AngelMarketDataService] searchScrip failed for ${sym}: ${err.message}`);
+            }
+            return null;
+        });
+
+        const resolved = await Promise.all(promises);
+        for (const r of resolved) {
+            if (r) result.push(r);
+        }
+
+        tradingCronLogger.info(
+            `[AngelMarketDataService] Token resolution complete: ${result.length}/${tradingsymbols.length} tokens resolved`
+        );
+
+        return result;
+    }
+
     /**
      * Fetch live LTP for a batch of NFO option symbols from Angel One's Quote API.
      * @param tokens  Array of { symbolToken, tradingsymbol } for NFO options
@@ -588,12 +671,20 @@ export class AngelMarketDataService {
                     const fetched = json.data.fetched;
                     const tokensPriced = new Set(fetched.map((f: any) => String(f.symbolToken)));
                     const missingTokens = nfoTokens.filter(t => !tokensPriced.has(t));
+                    const tokenToSymbol = new Map(chunk.map(t => [t.symbolToken, t.tradingsymbol]));
 
                     for (const item of fetched) {
                         if (item?.symbolToken && item?.ltp != null) {
-                            result.set(String(item.symbolToken), Number(item.ltp));
+                            const ltp = Number(item.ltp);
+                            const tok = String(item.symbolToken);
+                            result.set(tok, ltp);
+                            const sym = item.tradingSymbol || tokenToSymbol.get(tok);
+                            if (sym) {
+                                result.set(sym, ltp);
+                                result.set(`NFO:${sym}`, ltp);
+                            }
                             tradingCronLogger.debug(
-                                `[AngelMarketDataService]   ↳ ${item.tradingSymbol ?? item.symbolToken}: ₹${Number(item.ltp).toFixed(2)}`
+                                `[AngelMarketDataService]   ↳ ${sym ?? tok}: ₹${ltp.toFixed(2)}`
                             );
                         }
                     }
@@ -629,7 +720,7 @@ export class AngelMarketDataService {
         }
 
         tradingCronLogger.info(
-            `[AngelMarketDataService] getOptionsLTP complete: ${result.size}/${tokens.length} NFO option LTPs fetched successfully`
+            `[AngelMarketDataService] getOptionsLTP complete: ${result.size} entries mapped successfully`
         );
 
         return result;
