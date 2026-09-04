@@ -76,6 +76,8 @@ export class AngelMarketDataService {
         }
 
         try {
+            tradingCronLogger.info(`[AngelMarketDataService] ➔ Attempting TOTP auto-login for client: ${clientCode.slice(0, 3)}***`);
+            const startTime = Date.now();
             const totp = this.generateTOTP(totpKey);
             const response = await fetch(
                 'https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByPassword',
@@ -99,19 +101,20 @@ export class AngelMarketDataService {
                 }
             );
 
+            const duration = Date.now() - startTime;
             const json = (await response.json()) as any;
             if (json?.status === true && json?.data?.jwtToken) {
                 this.jwtToken = json.data.jwtToken;
                 // Token valid for 20 hours
                 this.tokenExpiry = Date.now() + 20 * 60 * 60 * 1000;
-                tradingCronLogger.info('[AngelMarketDataService] Angel One TOTP Auto-Login Successful!');
+                tradingCronLogger.info(`[AngelMarketDataService] ✔ Angel One TOTP Auto-Login Successful (${duration}ms)!`);
                 return this.jwtToken;
             } else {
-                tradingCronLogger.warn(`[AngelMarketDataService] Auto-login failed: ${JSON.stringify(json)}`);
+                tradingCronLogger.warn(`[AngelMarketDataService] ✖ Auto-login failed (${duration}ms):`, { response: json });
                 return null;
             }
         } catch (err: any) {
-            tradingCronLogger.error(`[AngelMarketDataService] Auto-login exception: ${err.message}`);
+            tradingCronLogger.error(`[AngelMarketDataService] ✖ Auto-login exception: ${err.message}`, { error: err });
             return null;
         }
     }
@@ -172,6 +175,8 @@ export class AngelMarketDataService {
         };
 
         try {
+            tradingCronLogger.info(`[AngelMarketDataService] ➔ Fetching 15m candles from Angel One for ${indexName} (token: ${symbolToken})`);
+            const startTime = Date.now();
             const response = await fetch(
                 'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
                 {
@@ -191,6 +196,7 @@ export class AngelMarketDataService {
                 }
             );
 
+            const duration = Date.now() - startTime;
             const json = (await response.json()) as any;
 
             if (json?.status === true && Array.isArray(json?.data)) {
@@ -206,14 +212,14 @@ export class AngelMarketDataService {
                 // Save to in-memory cache
                 this.candleCache.set(cacheKey, { candles, timestamp: Date.now() });
 
-                tradingCronLogger.info(`[AngelMarketDataService] Successfully fetched & cached ${candles.length} 15m candles from Angel One for ${indexName}`);
+                tradingCronLogger.info(`[AngelMarketDataService] ✔ Successfully fetched & cached ${candles.length} 15m candles from Angel One for ${indexName} (${duration}ms)`);
                 return candles;
             } else {
-                tradingCronLogger.warn(`[AngelMarketDataService] Angel One returned no 15m candles: ${JSON.stringify(json)}`);
+                tradingCronLogger.warn(`[AngelMarketDataService] ✖ Angel One returned non-success for 15m candles (${duration}ms):`, { response: json });
                 return [];
             }
         } catch (err: any) {
-            tradingCronLogger.error(`[AngelMarketDataService] Failed to fetch Angel One 15m candles: ${err.message}`);
+            tradingCronLogger.error(`[AngelMarketDataService] ✖ Failed to fetch Angel One 15m candles: ${err.message}`, { error: err });
             return [];
         }
     }
@@ -251,6 +257,8 @@ export class AngelMarketDataService {
         };
 
         try {
+            tradingCronLogger.info(`[AngelMarketDataService] ➔ Fetching 1h candles from Angel One for ${indexName} (token: ${symbolToken})`);
+            const startTime = Date.now();
             const response = await fetch(
                 'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
                 {
@@ -270,6 +278,7 @@ export class AngelMarketDataService {
                 }
             );
 
+            const duration = Date.now() - startTime;
             const json = (await response.json()) as any;
 
             if (json?.status === true && Array.isArray(json?.data)) {
@@ -285,14 +294,14 @@ export class AngelMarketDataService {
                 // Save to in-memory cache
                 this.candleCache.set(cacheKey, { candles, timestamp: Date.now() });
 
-                tradingCronLogger.info(`[AngelMarketDataService] Successfully fetched & cached ${candles.length} 1h candles from Angel One for ${indexName}`);
+                tradingCronLogger.info(`[AngelMarketDataService] ✔ Successfully fetched & cached ${candles.length} 1h candles from Angel One for ${indexName} (${duration}ms)`);
                 return candles;
             } else {
-                tradingCronLogger.warn(`[AngelMarketDataService] Angel One returned no 1h candles: ${JSON.stringify(json)}`);
+                tradingCronLogger.warn(`[AngelMarketDataService] ✖ Angel One returned non-success for 1h candles (${duration}ms):`, { response: json });
                 return [];
             }
         } catch (err: any) {
-            tradingCronLogger.error(`[AngelMarketDataService] Failed to fetch Angel One 1h candles: ${err.message}`);
+            tradingCronLogger.error(`[AngelMarketDataService] ✖ Failed to fetch Angel One 1h candles: ${err.message}`, { error: err });
             return [];
         }
     }

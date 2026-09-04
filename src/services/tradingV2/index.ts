@@ -64,16 +64,26 @@ export class TradingV2 {
 
             // ── 2. Initialize Kite client for this bot ────────────────────
             if (!c.API_KEY || !c.ACCESS_TOKEN) {
-                tradingCycleErrorLogger.error(`${tag} Missing API_KEY or ACCESS_TOKEN — skipping`);
+                tradingCycleErrorLogger.error(`${tag} ✖ Missing API_KEY (${c.API_KEY ? 'Present' : 'MISSING'}) or ACCESS_TOKEN (${c.ACCESS_TOKEN ? 'Present' : 'MISSING'}) — skipping bot execution`);
                 return;
             }
             const kite = new KiteExchange(c.API_KEY, c.ACCESS_TOKEN);
+
+            // ── 2B. Check and monitor any open position first ─────────────
+            const hasOpenBefore = await Data.hasOpenPosition(c.id);
+            if (hasOpenBefore) {
+                tradingCronLogger.info(`${tag} ➔ Open position exists. Checking exit conditions...`);
+                await this.monitorAndExit(c, kite);
+            }
 
             // ── 3. Fetch market data (1h & 15m NIFTY/BANKNIFTY index candles + spot LTP) ─
             const marketData = await MarketDataService.fetchMarketData(
                 c, kite, tradingCronLogger, skipTradingLogger
             );
-            if (!marketData) return;
+            if (!marketData) {
+                tradingCycleErrorLogger.error(`${tag} ✖ Market data unavailable for ${c.INDEX} — aborting cycle for this bot`);
+                return;
+            }
 
             const { candles15m, candles1h, spotPrice } = marketData;
 
@@ -103,7 +113,7 @@ export class TradingV2 {
                     `${tag} [UTBot 1H] Signal: ${utResult.signal} | ` +
                     `ATR: ${utResult.atr.toFixed(1)} | ` +
                     `TrailingStop: ${utResult.trailingStop.toFixed(1)} | ` +
-                    `Reasons: ${utResult.reasons.join('; ')}`
+                    `Reasons: ${utResult.reasons.join('; ') || 'None'}`
                 );
 
                 if (utResult.signal !== 'NONE') {
@@ -116,6 +126,8 @@ export class TradingV2 {
                 } else if (utResult.skipReasons.length) {
                     skipReasons.push(...utResult.skipReasons);
                 }
+            } else {
+                tradingCronLogger.debug(`${tag} [UTBot 1H] Disabled in bot configuration`);
             }
 
             // ── 4B. PRIORITY 2: ATR-14 Strategy (15-Minute 3:00 PM Window) ─
@@ -134,7 +146,7 @@ export class TradingV2 {
                     `${tag} [ATR14 15m] Signal: ${atrResult.signal} | ` +
                     `ATR14: ${atrResult.atr14.toFixed(1)} | ` +
                     `TR: ${atrResult.tr.toFixed(1)} | ` +
-                    `Reasons: ${atrResult.reasons.join('; ')}`
+                    `Reasons: ${atrResult.reasons.join('; ') || 'None'}`
                 );
 
                 if (atrResult.signal !== 'NONE') {
@@ -150,7 +162,7 @@ export class TradingV2 {
             }
 
             if (skipReasons.length && chosenSignal === 'NONE') {
-                skipTradingLogger.info(`${tag} Skip reasons: ${skipReasons.join('; ')}`);
+                skipTradingLogger.info(`${tag} Signal evaluation complete (NO SIGNAL). Skip reasons: ${skipReasons.join('; ')}`);
             }
 
             // ── 5. Daily loss & open position checks ──────────────────────
@@ -161,14 +173,15 @@ export class TradingV2 {
 
             // ── 6. Filter checks (Open position, daily loss, signal present) ──
             if (chosenSignal === 'NONE' || !chosenOptionType) {
+                tradingCronLogger.info(`${tag} No trade action: No signal generated for ${c.INDEX}`);
                 return;
             }
             if (hasOpenPos) {
-                skipTradingLogger.info(`${tag} SKIP: Open position already exists for this bot`);
+                skipTradingLogger.info(`${tag} SKIP: Open position already exists for this bot (cannot open multiple concurrent positions)`);
                 return;
             }
             if (dailyLossHit) {
-                skipTradingLogger.info(`${tag} SKIP: Max daily loss limit (₹${c.MAX_LOSS_PER_DAY}) reached`);
+                skipTradingLogger.info(`${tag} SKIP: Max daily loss limit (₹${c.MAX_LOSS_PER_DAY}) reached for bot ${c.id}`);
                 return;
             }
 
@@ -184,15 +197,15 @@ export class TradingV2 {
 
             tradingCronLogger.info(
                 `${tag} Strike selected: ${strike} ${optionType} | ` +
-                `Spot: ${spotPrice.toFixed(2)} | ATR: ${chosenATR.toFixed(1)}`
+                `Spot: ₹${spotPrice.toFixed(2)} | ATR: ${chosenATR.toFixed(1)} | Step: ${stepSize}`
             );
 
             // ── 8. Load NFO instruments (cached) ──────────────────────────
             if (!instrumentCache.length || Date.now() - instrumentCacheAt > INSTRUMENT_CACHE_TTL) {
-                tradingCronLogger.info(`${tag} Refreshing NFO instrument list...`);
+                tradingCronLogger.info(`${tag} Refreshing NFO instrument list from Zerodha...`);
                 instrumentCache   = await kite.getInstruments('NFO');
                 instrumentCacheAt = Date.now();
-                tradingCronLogger.info(`${tag} Loaded ${instrumentCache.length} NFO instruments`);
+                tradingCronLogger.info(`${tag} Loaded ${instrumentCache.length} NFO instruments into cache`);
             }
 
             // ── 9. Find target option instrument ─────────────────────────
@@ -206,14 +219,14 @@ export class TradingV2 {
 
             if (!instrument) {
                 tradingCycleErrorLogger.error(
-                    `${tag} No instrument found for ${c.INDEX} ${strike} ${optionType} ` +
-                    `(${c.EXPIRY_TYPE} expiry) — skipping`
+                    `${tag} ✖ No matching instrument found for ${c.INDEX} ${strike} ${optionType} ` +
+                    `(${c.EXPIRY_TYPE} expiry) — skipping order placement`
                 );
                 return;
             }
 
             tradingCronLogger.info(
-                `${tag} Instrument: ${instrument.tradingsymbol} | ` +
+                `${tag} Selected Instrument: ${instrument.tradingsymbol} (Token: ${instrument.instrument_token}) | ` +
                 `Expiry: ${instrument.expiry} | LotSize: ${instrument.lot_size}`
             );
 
@@ -252,6 +265,7 @@ export class TradingV2 {
             }
 
             // ── 11. Place real entry order ────────────────────────────────
+            tradingCronLogger.info(`${tag} ➔ Placing real entry BUY order on Zerodha for ${instrument.tradingsymbol} (Qty: ${quantity})...`);
             const orderResult = await kite.placeOrder({
                 exchange:         'NFO',
                 tradingsymbol:    instrument.tradingsymbol,
@@ -264,7 +278,7 @@ export class TradingV2 {
             });
 
             const orderId = orderResult.order_id;
-            tradesLogger.info(`${tag} ✅ Order placed: ${orderId} | ${instrument.tradingsymbol} | Qty: ${quantity} | Strategy: ${strategyName}`);
+            tradesLogger.info(`${tag} ✅ Order placed successfully: ${orderId} | ${instrument.tradingsymbol} | Qty: ${quantity} | Strategy: ${strategyName}`);
 
             // ── 12. Save trade state ──────────────────────────────────────
             const state = await Data.getOrCreateState(c.id, c.USER_ID, instrument.tradingsymbol);
@@ -277,10 +291,16 @@ export class TradingV2 {
             state.tradingMode  = strategyName;
             await (state as any).save();
 
-            tradingCronLogger.info(`${tag} Trade state saved (${strategyName}). Monitoring exit via position P&L.`);
+            tradingCronLogger.info(`${tag} ✔ Trade state saved (${strategyName}, OrderId: ${orderId}). Now monitoring exit via position P&L.`);
 
         } catch (err: any) {
-            tradingCycleErrorLogger.error(`${tag} UNCAUGHT ERROR: ${err.message}`, { stack: err.stack });
+            tradingCycleErrorLogger.error(`${tag} ✖ UNCAUGHT CYCLE ERROR: ${err.message}`, {
+                error: err,
+                stack: err.stack,
+                botId: c.id,
+                index: c.INDEX
+            });
+            throw err;
         } finally {
             tradingCronLogger.info(`${tag} ========== END ==========`);
         }

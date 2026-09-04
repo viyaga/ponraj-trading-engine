@@ -46,6 +46,7 @@ export class MarketDataService {
         const cacheKey   = `${instrument}:15minute`;
 
         if (this.candleCache.has(cacheKey)) {
+            tradingCronLogger.debug(`[MarketDataService] Cache HIT for 15m candles (${instrument})`);
             return this.candleCache.get(cacheKey)!;
         }
 
@@ -57,21 +58,30 @@ export class MarketDataService {
             try {
                 const angelCandles = await AngelMarketDataService.get15mCandles(index);
                 if (angelCandles && angelCandles.length > 0) {
-                    return angelCandles.filter(c => c.timestamp < currentCandleStart);
+                    const filtered = angelCandles.filter(c => c.timestamp < currentCandleStart);
+                    tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One 15m candles: ${filtered.length} completed candles for ${index}`);
+                    return filtered;
                 }
+                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned 0 15m candles for ${index}, attempting Zerodha fallback`);
             } catch (err: any) {
-                tradingCronLogger.debug(`[MarketDataService] Angel One 15m candle fetch fallback to Zerodha: ${err.message}`);
+                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One 15m candle fetch failed, falling back to Zerodha: ${err.message}`, { error: err });
             }
 
             // 2. Fallback to Zerodha Kite API
             const from = new Date(now - CANDLE_LOOKBACK * FIFTEEN_MIN_MS);
             const to   = new Date(now);
 
+            tradingCronLogger.info(`[MarketDataService] ➔ Fetching 15m candles from Zerodha Kite: ${instrument} (${from.toISOString()} to ${to.toISOString()})`);
             const candles = await kite.getCandlestickData(instrument, '15minute', from, to);
-            return candles.filter(c => c.timestamp < currentCandleStart);
+            const filtered = candles.filter(c => c.timestamp < currentCandleStart);
+            tradingCronLogger.info(`[MarketDataService] ✔ Received ${candles.length} raw 15m candles from Zerodha (${filtered.length} completed candles)`);
+            return filtered;
         })();
 
-        fetchPromise.catch(() => this.candleCache.delete(cacheKey));
+        fetchPromise.catch((err) => {
+            tradingCycleErrorLogger.error(`[MarketDataService] ✖ Failed to fetch 15m candles for ${index}: ${err.message}`, { error: err });
+            this.candleCache.delete(cacheKey);
+        });
         this.candleCache.set(cacheKey, fetchPromise);
         return fetchPromise;
     }
@@ -88,6 +98,7 @@ export class MarketDataService {
         const cacheKey   = `${instrument}:60minute`;
 
         if (this.candleCache.has(cacheKey)) {
+            tradingCronLogger.debug(`[MarketDataService] Cache HIT for 1h candles (${instrument})`);
             return this.candleCache.get(cacheKey)!;
         }
 
@@ -99,21 +110,30 @@ export class MarketDataService {
             try {
                 const angelCandles = await AngelMarketDataService.get1hCandles(index);
                 if (angelCandles && angelCandles.length > 0) {
-                    return angelCandles.filter(c => c.timestamp < currentCandleStart);
+                    const filtered = angelCandles.filter(c => c.timestamp < currentCandleStart);
+                    tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One 1h candles: ${filtered.length} completed candles for ${index}`);
+                    return filtered;
                 }
+                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned 0 1h candles for ${index}, attempting Zerodha fallback`);
             } catch (err: any) {
-                tradingCronLogger.debug(`[MarketDataService] Angel One 1h candle fetch fallback to Zerodha: ${err.message}`);
+                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One 1h candle fetch failed, falling back to Zerodha: ${err.message}`, { error: err });
             }
 
             // 2. Fallback to Zerodha Kite API
             const from = new Date(now - 100 * ONE_HOUR_MS);
             const to   = new Date(now);
 
+            tradingCronLogger.info(`[MarketDataService] ➔ Fetching 1h candles from Zerodha Kite: ${instrument} (${from.toISOString()} to ${to.toISOString()})`);
             const candles = await kite.getCandlestickData(instrument, '60minute', from, to);
-            return candles.filter(c => c.timestamp < currentCandleStart);
+            const filtered = candles.filter(c => c.timestamp < currentCandleStart);
+            tradingCronLogger.info(`[MarketDataService] ✔ Received ${candles.length} raw 1h candles from Zerodha (${filtered.length} completed candles)`);
+            return filtered;
         })();
 
-        fetchPromise.catch(() => this.candleCache.delete(cacheKey));
+        fetchPromise.catch((err) => {
+            tradingCycleErrorLogger.error(`[MarketDataService] ✖ Failed to fetch 1h candles for ${index}: ${err.message}`, { error: err });
+            this.candleCache.delete(cacheKey);
+        });
         this.candleCache.set(cacheKey, fetchPromise);
         return fetchPromise;
     }
@@ -121,17 +141,25 @@ export class MarketDataService {
     static async getSpotPrice(kite: KiteExchange, index: string): Promise<number> {
         const instrument = getIndexInstrument(index);
         if (this.priceCache.has(instrument)) {
+            tradingCronLogger.debug(`[MarketDataService] Cache HIT for spot price (${instrument})`);
             return this.priceCache.get(instrument)!;
         }
 
         const fetchPromise = (async () => {
+            tradingCronLogger.info(`[MarketDataService] ➔ Fetching spot LTP for ${instrument}`);
             const ltp = await kite.getLTP([instrument]);
             const price = ltp[instrument]?.last_price ?? 0;
-            if (!price) throw new Error(`[MarketData] No LTP for ${instrument}`);
+            if (!price) {
+                throw new Error(`[MarketData] No LTP returned for ${instrument}. Received: ${JSON.stringify(ltp)}`);
+            }
+            tradingCronLogger.info(`[MarketDataService] ✔ Spot LTP for ${instrument}: ₹${price.toFixed(2)}`);
             return price;
         })();
 
-        fetchPromise.catch(() => this.priceCache.delete(instrument));
+        fetchPromise.catch((err) => {
+            tradingCycleErrorLogger.error(`[MarketDataService] ✖ Failed to fetch spot price for ${instrument}: ${err.message}`, { error: err });
+            this.priceCache.delete(instrument);
+        });
         this.priceCache.set(instrument, fetchPromise);
         return fetchPromise;
     }
@@ -142,15 +170,25 @@ export class MarketDataService {
         logger: typeof tradingCronLogger,
         skipLogger: typeof tradingCronLogger
     ): Promise<FetchedMarketData | null> {
+        const tag = `[MarketData:${c.id}:${c.INDEX}]`;
         try {
+            logger.info(`${tag} ➔ Starting market data fetch (15m candles, 1h candles, spot price)...`);
+            const startTime = Date.now();
+
             const [candles15m, candles1h, spotPrice] = await Promise.all([
                 this.get15mCandles(kite, c.INDEX),
                 this.get1hCandles(kite, c.INDEX),
                 this.getSpotPrice(kite, c.INDEX),
             ]);
 
+            const elapsed = Date.now() - startTime;
+            logger.info(
+                `${tag} ✔ Market data fetched successfully in ${elapsed}ms: ` +
+                `15m candles: ${candles15m.length}, 1h candles: ${candles1h.length}, Spot: ₹${spotPrice.toFixed(2)}`
+            );
+
             if (!candles15m.length && !candles1h.length) {
-                skipLogger.warn(`[MarketData] No candles returned for ${c.INDEX}`);
+                skipLogger.warn(`${tag} ✖ No candles returned for ${c.INDEX} across both 15m and 1h intervals`);
                 return null;
             }
 
@@ -176,7 +214,7 @@ export class MarketDataService {
                 spotPrice,
             };
         } catch (err: any) {
-            tradingCycleErrorLogger.error(`[MarketData] Failed to fetch market data: ${err.message}`);
+            tradingCycleErrorLogger.error(`${tag} ✖ Failed to fetch market data: ${err.message}`, { error: err, botId: c.id, index: c.INDEX });
             return null;
         }
     }

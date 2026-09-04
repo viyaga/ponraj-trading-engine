@@ -4,11 +4,22 @@ const createConsoleLogger = (serviceName: string) => {
     const log = (level: string, message: string, meta?: any) => {
         const timestamp = new Date().toISOString();
         let msg = `${timestamp} [${level.toUpperCase()}] [${serviceName}]: ${message}`;
-        if (meta) {
+        if (meta !== undefined) {
             if (meta instanceof Error) {
                 msg += `\n${meta.stack || meta.message}`;
-            } else if (Object.keys(meta).length > 0) {
-                msg += ` ${util.inspect(meta, { depth: 4 })}`;
+            } else if (typeof meta === 'object' && meta !== null) {
+                // If meta contains an error property
+                if (meta.error instanceof Error) {
+                    const { error, ...rest } = meta;
+                    msg += `\nError: ${error.stack || error.message}`;
+                    if (Object.keys(rest).length > 0) {
+                        msg += `\nDetails: ${util.inspect(rest, { depth: 6, colors: false })}`;
+                    }
+                } else {
+                    msg += `\n${util.inspect(meta, { depth: 6, colors: false })}`;
+                }
+            } else {
+                msg += ` ${meta}`;
             }
         }
         if (level === "error") {

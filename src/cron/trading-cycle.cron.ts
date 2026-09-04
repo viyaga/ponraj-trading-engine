@@ -89,11 +89,16 @@ const tradingCycleCronJob = (): void => {
                     const config = configs[index];
                     if (result.status === "fulfilled") {
                         totalSucceeded++;
-                        tradingCronLogger.info(`[TradingCron] ✓ Bot ${config.id} (${config.INDEX}) completed`);
+                        tradingCronLogger.info(`[TradingCron] ✓ Bot ${config.id} (${config.INDEX} | DRY_RUN: ${config.DRY_RUN}) completed cycle without errors`);
                     } else {
                         totalFailed++;
-                        tradingCronLogger.error(`[TradingCron] ✗ Bot ${config.id} (${config.INDEX}) failed:`, {
-                            reason: (result as any).reason?.message ?? (result as any).reason,
+                        const err = (result as any).reason;
+                        tradingCronLogger.error(`[TradingCron] ✗ Bot ${config.id} (${config.INDEX} | DRY_RUN: ${config.DRY_RUN}) failed:`, {
+                            error: err instanceof Error ? err : undefined,
+                            errorMessage: err?.message ?? String(err),
+                            stack: err?.stack,
+                            botId: config.id,
+                            index: config.INDEX
                         });
                     }
                 });
