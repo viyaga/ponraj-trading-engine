@@ -130,12 +130,24 @@ export class KiteExchange {
             return res as Record<string, { last_price: number }>;
         } catch (err: any) {
             const duration = Date.now() - startTime;
+            const isPermissionError = err?.error_type === 'PermissionException' ||
+                                     err?.message?.includes('Insufficient permission') ||
+                                     err?.status_code === 403;
+
             tradingCronLogger.error(`[KiteExchange] ✖ getLTP failed from Zerodha (${duration}ms): ${err.message}`, {
                 error: err,
                 errorType: err?.error_type,
                 statusCode: err?.status_code,
                 message: err?.message,
             });
+
+            if (isPermissionError) {
+                tradingCronLogger.warn(
+                    `[KiteExchange] ⚠️ Zerodha PermissionException: Your Kite Connect app credentials lack market-data permissions. ` +
+                    `Check that your paid Kite Connect subscription includes market data access. ` +
+                    `Using Angel One SmartAPI for option LTP as primary source.`
+                );
+            }
             return {};
         }
     }

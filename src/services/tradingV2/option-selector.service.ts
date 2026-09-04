@@ -88,10 +88,21 @@ export class OptionSelectorService {
                 `scanning ATM ± ${radius * stepSize} pts (radius: ${radius} strikes)`
             );
 
-            const result = await this.scanWithRadius(
+            const { selected, ltpAvailable } = await this.scanWithRadius(
                 instruments, kite, config, optionType, spotPrice, atm, stepSize, radius, tag
             );
-            if (result) return result;
+            if (selected) return selected;
+
+            // If LTP data could not be retrieved at all, abort immediately — do not attempt expansion
+            // and do not falsely advise widening the premium filter.
+            if (!ltpAvailable) {
+                tradingCycleErrorLogger.error(
+                    `${tag} [OptionSelector] ✖ SCAN ABORTED — Unable to obtain live LTP for candidate ${config.INDEX} ${optionType} options. ` +
+                    `Both Angel One (Quote API) and Zerodha (PermissionException / lack of market-data entitlement) returned no prices. ` +
+                    `Premium-range filtering was NOT evaluated.`
+                );
+                return null;
+            }
 
             if (!isExpanded) {
                 tradingCronLogger.warn(
@@ -102,8 +113,8 @@ export class OptionSelectorService {
         }
 
         tradingCycleErrorLogger.error(
-            `${tag} [OptionSelector] ✖ SCAN FAILED — No ${config.INDEX} ${optionType} option found ` +
-            `in premium range ₹${config.OPTION_MIN_PREMIUM}–₹${config.OPTION_MAX_PREMIUM} ` +
+            `${tag} [OptionSelector] ✖ SCAN FAILED — Candidate options were priced, but none fell within ` +
+            `premium range ₹${config.OPTION_MIN_PREMIUM}–₹${config.OPTION_MAX_PREMIUM} ` +
             `after scanning ATM ± ${expandedScanRange} pts. ` +
             `Consider widening OPTION_MIN_PREMIUM / OPTION_MAX_PREMIUM in bot config.`
         );
@@ -122,7 +133,7 @@ export class OptionSelectorService {
         stepSize:     number,
         radius:       number,
         tag:          string
-    ): Promise<SelectedOption | null> {
+    ): Promise<{ selected: SelectedOption | null; ltpAvailable: boolean }> {
 
         // 1. Build candidate strikes: ATM, ATM±step, ATM±2*step … up to radius
         const strikes = new Set<number>();
@@ -169,7 +180,7 @@ export class OptionSelectorService {
                 `in strike set [${sortedStrikes.join(', ')}]. ` +
                 `Check that the NFO instrument cache is populated and not stale.`
             );
-            return null;
+            return { selected: null, ltpAvailable: false };
         }
 
         // 3. Pick nearest expiry per strike (weekly or monthly)
@@ -207,7 +218,7 @@ export class OptionSelectorService {
             tradingCronLogger.warn(
                 `${tag} [OptionSelector] ⚠️  No LTPs returned across both Angel One and Zerodha for candidate options.`
             );
-            return null;
+            return { selected: null, ltpAvailable: false };
         }
 
         // 5. Filter by premium range and score — log full table
@@ -273,7 +284,7 @@ export class OptionSelectorService {
                         : closest.ltp - config.OPTION_MAX_PREMIUM).toFixed(2)})`
                 );
             }
-            return null;
+            return { selected: null, ltpAvailable: true };
         }
 
         // 6. Pick best:
@@ -304,7 +315,7 @@ export class OptionSelectorService {
             `Lot size: ${winner.instrument.lot_size}`
         );
 
-        return winner;
+        return { selected: winner, ltpAvailable: true };
     }
 
     /**
@@ -407,10 +418,17 @@ export class OptionSelectorService {
                     (missing.length ? ` | ⚠️  Missing: ${missing.join(', ')}` : ' | ✅ All received')
                 );
             } catch (err: any) {
-                tradingCronLogger.warn(
-                    `${tag} [OptionSelector] ⚠️  LTP batch ${batchNum}/${totalBatches} FAILED: ` +
-                    `${err.message} | Symbols: ${batch.join(', ')}`
-                );
+                const isPermError = err?.error_type === 'PermissionException' || err?.message?.includes('Insufficient permission');
+                if (isPermError) {
+                    tradingCronLogger.warn(
+                        `${tag} [OptionSelector] ⚠️ Zerodha PermissionException: Paid market-data subscription missing for this Kite Connect app. Zerodha LTP fallback unavailable.`
+                    );
+                } else {
+                    tradingCronLogger.warn(
+                        `${tag} [OptionSelector] ⚠️  LTP batch ${batchNum}/${totalBatches} FAILED: ` +
+                        `${err.message} | Symbols: ${batch.join(', ')}`
+                    );
+                }
             }
         }
 
@@ -423,7 +441,7 @@ export class OptionSelectorService {
 
     /**
      * Batch-fetch LTPs from Angel One SmartAPI Quote API.
-     * Resolves Angel One symbol tokens for the candidate instruments.
+     * Resolves Angel One symbol tokens directly from OpenAPIScripMaster cache (0 searchScrip calls!).
      * Returns a map of "NFO:tradingsymbol" -> last_price.
      */
     private static async fetchLTPsFromAngelOne(
@@ -432,15 +450,22 @@ export class OptionSelectorService {
     ): Promise<Map<string, number>> {
         const result = new Map<string, number>();
         try {
-            const symbols = instruments.map(ins => ins.tradingsymbol);
-            const tokens = await AngelMarketDataService.resolveSymbolTokens(symbols);
+            const resolved = await AngelMarketDataService.resolveOptionTokensFromMaster(
+                instruments.map(ins => ({
+                    name: ins.name,
+                    expiry: ins.expiry,
+                    strike: ins.strike,
+                    instrument_type: ins.instrument_type,
+                    tradingsymbol: ins.tradingsymbol,
+                }))
+            );
 
-            if (!tokens.length) {
-                tradingCronLogger.warn(`${tag} [OptionSelector] Could not resolve any Angel One tokens for candidates.`);
+            if (!resolved.length) {
+                tradingCronLogger.warn(`${tag} [OptionSelector] Could not resolve any Angel One tokens from Scrip Master for candidates.`);
                 return result;
             }
 
-            const ltpMap = await AngelMarketDataService.getOptionsLTP(tokens);
+            const ltpMap = await AngelMarketDataService.getOptionsLTP(resolved);
 
             for (const ins of instruments) {
                 const ltp = ltpMap.get(`NFO:${ins.tradingsymbol}`) ?? ltpMap.get(ins.tradingsymbol);

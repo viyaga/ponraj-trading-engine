@@ -37,6 +37,25 @@ export class AngelMarketDataService {
     private static readonly INCREMENTAL_PERIODS_15M = 3; // fetch last 3 × 15m = 45 min window
     private static readonly INCREMENTAL_PERIODS_1H  = 3; // fetch last 3 × 1h  = 3h window
 
+    // Rate limit: Angel One enforces max 3 req/sec on getCandleData across the client account.
+    // Minimum 350ms interval ensures we never exceed 3 req/sec.
+    private static lastHistoricalApiCallTime = 0;
+    private static readonly HISTORICAL_MIN_INTERVAL_MS = 350;
+
+    /**
+     * Enforces rate-limiting spacing for Angel One historical candle API (≤3 req/sec).
+     * Ensures calls to getCandleData are always spaced out by at least 350ms.
+     */
+    private static async throttleHistoricalApi(): Promise<void> {
+        const now = Date.now();
+        const elapsed = now - this.lastHistoricalApiCallTime;
+        if (elapsed < this.HISTORICAL_MIN_INTERVAL_MS) {
+            const waitMs = this.HISTORICAL_MIN_INTERVAL_MS - elapsed;
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+        }
+        this.lastHistoricalApiCallTime = Date.now();
+    }
+
     /**
      * Clear Angel One candle cache manually if needed
      */
@@ -190,6 +209,7 @@ export class AngelMarketDataService {
                 this.jwtToken = json.data.jwtToken;
                 // Token valid for 20 hours
                 this.tokenExpiry = Date.now() + 20 * 60 * 60 * 1000;
+                this.lastHistoricalApiCallTime = Date.now();
                 tradingCronLogger.info(`[AngelMarketDataService] ✔ Angel One TOTP Auto-Login Successful (${duration}ms)! Token expires in 20h.`);
                 return this.jwtToken;
             } else {
@@ -303,6 +323,7 @@ export class AngelMarketDataService {
         for (let attempt = 1; attempt <= 2; attempt++) {
             try {
                 const token     = await this.getValidJwtToken(apiKey);
+                await this.throttleHistoricalApi();
                 const startTime = Date.now();
                 const response  = await fetch(
                     'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
@@ -419,9 +440,6 @@ export class AngelMarketDataService {
             `for ${indexName} | prev boundary: ${cached ? new Date(cached.lastCandleBoundary).toISOString() : 'none'} → new: ${new Date(boundary).toISOString()}`
         );
 
-        // Small delay to respect Angel One's rate limit after 15m fetch
-        if (!isColdStart) await new Promise(r => setTimeout(r, 350));
-
         const body = {
             exchange:    'NSE',
             symboltoken: symbolToken,
@@ -430,152 +448,229 @@ export class AngelMarketDataService {
             todate:      this.formatDate(to),
         };
 
-        try {
-            const token     = await this.getValidJwtToken(apiKey);
-            const startTime = Date.now();
-            const response  = await fetch(
-                'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept':       'application/json',
-                        'X-UserType':   'USER',
-                        'X-SourceID':   'WEB',
-                        'X-ClientLocalIP':  '127.0.0.1',
-                        'X-ClientPublicIP': '127.0.0.1',
-                        'X-MACAddress': 'FE:80:00:00:00:00',
-                        'X-PrivateKey': apiKey,
-                        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-                    },
-                    body: JSON.stringify(body),
-                }
-            );
-
-            const duration = Date.now() - startTime;
-            const text     = await response.text();
-
-            let json: any;
+        // Try up to 2 attempts with backoff if rate-limited
+        for (let attempt = 1; attempt <= 2; attempt++) {
             try {
-                json = JSON.parse(text);
-            } catch {
-                tradingCronLogger.error(
-                    `[AngelMarketDataService] ✖ 1h candles non-JSON (HTTP ${response.status}, ${duration}ms): ${text.slice(0, 200)}`
+                const token     = await this.getValidJwtToken(apiKey);
+                await this.throttleHistoricalApi();
+                const startTime = Date.now();
+                const response  = await fetch(
+                    'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept':       'application/json',
+                            'X-UserType':   'USER',
+                            'X-SourceID':   'WEB',
+                            'X-ClientLocalIP':  '127.0.0.1',
+                            'X-ClientPublicIP': '127.0.0.1',
+                            'X-MACAddress': 'FE:80:00:00:00:00',
+                            'X-PrivateKey': apiKey,
+                            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                        },
+                        body: JSON.stringify(body),
+                    }
                 );
+
+                const duration = Date.now() - startTime;
+                const text     = await response.text();
+
+                let json: any;
+                try {
+                    json = JSON.parse(text);
+                } catch {
+                    tradingCronLogger.warn(
+                        `[AngelMarketDataService] ⚠️ 1h candles response non-JSON ` +
+                        `(HTTP ${response.status}, ${duration}ms, attempt ${attempt}): ${text.slice(0, 120)}`
+                    );
+                    if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
+                    return cached?.candles ?? [];
+                }
+
+                if (json?.status === true && Array.isArray(json?.data)) {
+                    const incoming  = this.parseCandles(json.data);
+                    const completed = incoming.filter(c => c.timestamp < boundary);
+
+                    const merged = isColdStart
+                        ? completed
+                        : this.mergeCandles(cached!.candles, completed);
+
+                    this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
+
+                    tradingCronLogger.info(
+                        `[AngelMarketDataService] ✔ 1h candles updated for ${indexName} (${duration}ms) | ` +
+                        `fetched: ${incoming.length} raw → ${completed.length} completed | ` +
+                        `cache total: ${merged.length} candles | ` +
+                        `${isColdStart ? 'cold start' : `+${completed.length - (cached?.candles.filter(c => c.timestamp >= boundary - this.ONE_HOUR_MS).length ?? 0)} new`}`
+                    );
+                    return merged;
+                } else {
+                    tradingCronLogger.warn(
+                        `[AngelMarketDataService] ✖ Angel One non-success for 1h candles ` +
+                        `(HTTP ${response.status}, ${duration}ms, attempt ${attempt}): ` +
+                        `status=${json?.status}, message="${json?.message ?? 'N/A'}"`
+                    );
+                    if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
+                    return cached?.candles ?? [];
+                }
+            } catch (err: any) {
+                tradingCronLogger.error(`[AngelMarketDataService] ✖ 1h fetch error (attempt ${attempt}): ${err.message}`, { error: err });
+                if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
                 return cached?.candles ?? [];
             }
-
-            if (json?.status === true && Array.isArray(json?.data)) {
-                const incoming  = this.parseCandles(json.data);
-                const completed = incoming.filter(c => c.timestamp < boundary);
-
-                const merged = isColdStart
-                    ? completed
-                    : this.mergeCandles(cached!.candles, completed);
-
-                this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
-
-                tradingCronLogger.info(
-                    `[AngelMarketDataService] ✔ 1h candles updated for ${indexName} (${duration}ms) | ` +
-                    `fetched: ${incoming.length} raw → ${completed.length} completed | ` +
-                    `cache total: ${merged.length} candles | ` +
-                    `${isColdStart ? 'cold start' : `+${completed.length - (cached?.candles.filter(c => c.timestamp >= boundary - this.ONE_HOUR_MS).length ?? 0)} new`}`
-                );
-                return merged;
-            } else {
-                tradingCronLogger.warn(
-                    `[AngelMarketDataService] ✖ Angel One non-success for 1h candles ` +
-                    `(HTTP ${response.status}, ${duration}ms): ` +
-                    `status=${json?.status}, message="${json?.message ?? 'N/A'}"`
-                );
-                return cached?.candles ?? [];
-            }
-        } catch (err: any) {
-            tradingCronLogger.error(`[AngelMarketDataService] ✖ 1h fetch error: ${err.message}`, { error: err });
-            return cached?.candles ?? [];
         }
+        return cached?.candles ?? [];
     }
 
 
-    private static tokenCache = new Map<string, string>(); // tradingsymbol -> symbolToken
+    // ─── Angel One OpenAPIScripMaster In-Memory Cache ────────────────────────
+    // Cached map of "INDEX:YYYY-MM-DD:STRIKE:TYPE" -> { token, symbol }
+    // Avoids slow, rate-limited searchScrip calls completely.
+    private static scripMasterCache: Map<string, { token: string; symbol: string }> | null = null;
+    private static scripMasterExpiry: number = 0;
+    private static readonly SCRIP_MASTER_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+    private static scripMasterLoadingPromise: Promise<Map<string, { token: string; symbol: string }>> | null = null;
 
     /**
-     * Batch-resolve Angel One symbol tokens for a list of NFO trading symbols.
-     * Uses in-memory cache first, queries Angel One searchScrip for uncached symbols.
+     * Standardizes date strings from various formats (e.g. "08SEP2026", "2026-09-08", ISO strings) to "YYYY-MM-DD".
      */
-    static async resolveSymbolTokens(
-        tradingsymbols: string[]
-    ): Promise<Array<{ symbolToken: string; tradingsymbol: string }>> {
-        const result: Array<{ symbolToken: string; tradingsymbol: string }> = [];
-        const toFetch: string[] = [];
-
-        for (const sym of tradingsymbols) {
-            if (this.tokenCache.has(sym)) {
-                result.push({ symbolToken: this.tokenCache.get(sym)!, tradingsymbol: sym });
-            } else {
-                toFetch.push(sym);
+    static normalizeExpiryToISO(expiry: string | Date): string {
+        if (!expiry) return '';
+        if (typeof expiry === 'string') {
+            const trimmed = expiry.trim().toUpperCase();
+            // Case 1: Angel One format like "08SEP2026"
+            if (/^\d{2}[A-Z]{3}\d{4}$/.test(trimmed)) {
+                const monthMap: Record<string, string> = {
+                    JAN: '01', FEB: '02', MAR: '03', APR: '04', MAY: '05', JUN: '06',
+                    JUL: '07', AUG: '08', SEP: '09', OCT: '10', NOV: '11', DEC: '12',
+                };
+                const day = trimmed.slice(0, 2);
+                const mon = monthMap[trimmed.slice(2, 5)];
+                const yr = trimmed.slice(5);
+                if (mon) return `${yr}-${mon}-${day}`;
+            }
+            // Case 2: Standard ISO "YYYY-MM-DD"
+            if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+                return trimmed.slice(0, 10);
             }
         }
+        const d = new Date(expiry);
+        if (isNaN(d.getTime())) return '';
+        const yr = d.getFullYear();
+        const mo = String(d.getMonth() + 1).padStart(2, '0');
+        const da = String(d.getDate()).padStart(2, '0');
+        return `${yr}-${mo}-${da}`;
+    }
 
-        if (toFetch.length === 0) {
-            return result;
+    /**
+     * Fetch & parse Angel One's OpenAPIScripMaster.json (public CDN dump, free, updated daily).
+     * Caches in memory for 6 hours.
+     * Maps "INDEX:YYYY-MM-DD:STRIKE:TYPE" (e.g. "NIFTY:2026-09-08:23650:PE") -> { token, symbol }.
+     */
+    static async getScripMaster(): Promise<Map<string, { token: string; symbol: string }>> {
+        if (this.scripMasterCache && Date.now() < this.scripMasterExpiry) {
+            return this.scripMasterCache;
+        }
+        if (this.scripMasterLoadingPromise) {
+            return await this.scripMasterLoadingPromise;
         }
 
-        const apiKey = env.angelOneApiKey || process.env.ANGEL_ONE_API_KEY;
-        if (!apiKey) return result;
-
-        const jwtToken = await this.getValidJwtToken(apiKey);
-        if (!jwtToken) return result;
-
-        tradingCronLogger.info(
-            `[AngelMarketDataService] Resolving Angel One symbol tokens for ${toFetch.length} instruments (${result.length} already cached)...`
-        );
-
-        // Resolve concurrently in small batches
-        const promises = toFetch.map(async (sym) => {
-            try {
-                const res = await fetch('https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/searchScrip', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'X-UserType': 'USER',
-                        'X-SourceID': 'WEB',
-                        'X-ClientLocalIP': '127.0.0.1',
-                        'X-ClientPublicIP': '127.0.0.1',
-                        'X-MACAddress': 'FE:80:00:00:00:00',
-                        'X-PrivateKey': apiKey,
-                        'Authorization': `Bearer ${jwtToken}`,
-                    },
-                    body: JSON.stringify({
-                        exchange: 'NFO',
-                        searchscrip: sym,
-                    }),
-                });
-
-                const json: any = await res.json();
-                if (json?.status === true && Array.isArray(json?.data) && json.data.length > 0) {
-                    const match = json.data.find((d: any) => d.tradingsymbol === sym) || json.data[0];
-                    if (match?.symboltoken) {
-                        const token = String(match.symboltoken);
-                        this.tokenCache.set(sym, token);
-                        return { symbolToken: token, tradingsymbol: sym };
-                    }
-                }
-            } catch (err: any) {
-                tradingCronLogger.warn(`[AngelMarketDataService] searchScrip failed for ${sym}: ${err.message}`);
+        this.scripMasterLoadingPromise = (async () => {
+            tradingCronLogger.info('[AngelMarketDataService] Downloading Angel One OpenAPIScripMaster.json...');
+            const startTime = Date.now();
+            const res = await fetch('https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json');
+            if (!res.ok) {
+                throw new Error(`Failed to download Angel One scrip master: HTTP ${res.status}`);
             }
-            return null;
+            const data = (await res.json()) as any[];
+            const map = new Map<string, { token: string; symbol: string }>();
+
+            const monthMap: Record<string, string> = {
+                JAN: '01', FEB: '02', MAR: '03', APR: '04', MAY: '05', JUN: '06',
+                JUL: '07', AUG: '08', SEP: '09', OCT: '10', NOV: '11', DEC: '12',
+            };
+
+            for (const item of data) {
+                if (item.exch_seg !== 'NFO' || item.instrumenttype !== 'OPTIDX') continue;
+                if (!item.expiry || item.expiry.length < 9) continue;
+
+                const day = item.expiry.slice(0, 2);
+                const mon = monthMap[item.expiry.slice(2, 5).toUpperCase()];
+                const yr = item.expiry.slice(5);
+                if (!mon) continue;
+
+                const expiryDate = `${yr}-${mon}-${day}`;
+                const strike = Math.round(parseFloat(item.strike) / 100);
+                const optType = item.symbol.endsWith('CE') ? 'CE' : item.symbol.endsWith('PE') ? 'PE' : null;
+                if (!optType) continue;
+
+                const key = `${item.name.toUpperCase()}:${expiryDate}:${strike}:${optType}`;
+                map.set(key, { token: String(item.token), symbol: item.symbol });
+            }
+
+            this.scripMasterCache = map;
+            this.scripMasterExpiry = Date.now() + this.SCRIP_MASTER_TTL_MS;
+            tradingCronLogger.info(
+                `[AngelMarketDataService] ✔ Angel One Scrip Master loaded: ${map.size} NFO index options indexed in ${Date.now() - startTime}ms. Cache TTL: 6h.`
+            );
+            return map;
+        })().finally(() => {
+            this.scripMasterLoadingPromise = null;
         });
 
-        const resolved = await Promise.all(promises);
-        for (const r of resolved) {
-            if (r) result.push(r);
-        }
+        return await this.scripMasterLoadingPromise;
+    }
 
-        tradingCronLogger.info(
-            `[AngelMarketDataService] Token resolution complete: ${result.length}/${tradingsymbols.length} tokens resolved`
-        );
+    /**
+     * Resolves Angel One symbol tokens directly from the Angel One OpenAPIScripMaster cache.
+     * ZERO HTTP calls to searchScrip!
+     * @param options Array of option descriptors to resolve
+     * @returns Array of { symbolToken, tradingsymbol (Zerodha), angelSymbol }
+     */
+    static async resolveOptionTokensFromMaster(
+        options: Array<{
+            name: string;
+            expiry: string | Date;
+            strike: number;
+            instrument_type: string;
+            tradingsymbol: string;
+        }>
+    ): Promise<Array<{ symbolToken: string; tradingsymbol: string; angelSymbol?: string }>> {
+        const result: Array<{ symbolToken: string; tradingsymbol: string; angelSymbol?: string }> = [];
+        if (!options.length) return result;
+
+        try {
+            const master = await this.getScripMaster();
+            const missing: string[] = [];
+
+            for (const opt of options) {
+                const normIndex = opt.name.toUpperCase().replace('NSE:', '').trim();
+                const normExpiry = this.normalizeExpiryToISO(opt.expiry);
+                const normStrike = Math.round(opt.strike);
+                const normType = opt.instrument_type.toUpperCase();
+
+                const key = `${normIndex}:${normExpiry}:${normStrike}:${normType}`;
+                const match = master.get(key);
+
+                if (match) {
+                    result.push({
+                        symbolToken: match.token,
+                        tradingsymbol: opt.tradingsymbol,
+                        angelSymbol: match.symbol,
+                    });
+                } else {
+                    missing.push(opt.tradingsymbol);
+                }
+            }
+
+            tradingCronLogger.info(
+                `[AngelMarketDataService] Master token resolution: ${result.length}/${options.length} options mapped` +
+                (missing.length ? ` | ⚠️ Unmatched: ${missing.join(', ')}` : ' | ✅ All matched')
+            );
+        } catch (err: any) {
+            tradingCronLogger.error(`[AngelMarketDataService] ✖ Scrip master resolution error: ${err.message}`, { error: err });
+        }
 
         return result;
     }
@@ -678,13 +773,18 @@ export class AngelMarketDataService {
                             const ltp = Number(item.ltp);
                             const tok = String(item.symbolToken);
                             result.set(tok, ltp);
-                            const sym = item.tradingSymbol || tokenToSymbol.get(tok);
-                            if (sym) {
-                                result.set(sym, ltp);
-                                result.set(`NFO:${sym}`, ltp);
+                            const reqSym = tokenToSymbol.get(tok);
+                            if (reqSym) {
+                                result.set(reqSym, ltp);
+                                result.set(`NFO:${reqSym}`, ltp);
                             }
+                            if (item.tradingSymbol && item.tradingSymbol !== reqSym) {
+                                result.set(item.tradingSymbol, ltp);
+                                result.set(`NFO:${item.tradingSymbol}`, ltp);
+                            }
+                            const symDisplay = reqSym || item.tradingSymbol || tok;
                             tradingCronLogger.debug(
-                                `[AngelMarketDataService]   ↳ ${sym ?? tok}: ₹${ltp.toFixed(2)}`
+                                `[AngelMarketDataService]   ↳ ${symDisplay}: ₹${ltp.toFixed(2)}`
                             );
                         }
                     }
