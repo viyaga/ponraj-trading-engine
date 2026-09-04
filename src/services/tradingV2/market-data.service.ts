@@ -146,7 +146,20 @@ export class MarketDataService {
         }
 
         const fetchPromise = (async () => {
-            tradingCronLogger.info(`[MarketDataService] ➔ Fetching spot LTP for ${instrument}`);
+            // 1. Try Angel One SmartAPI (Free)
+            try {
+                const angelPrice = await AngelMarketDataService.getLTP(index);
+                if (angelPrice && angelPrice > 0) {
+                    tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One spot LTP for ${index}: ₹${angelPrice.toFixed(2)}`);
+                    return angelPrice;
+                }
+                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned no LTP for ${index}, attempting Zerodha fallback`);
+            } catch (err: any) {
+                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One spot LTP fetch failed: ${err.message}`, { error: err });
+            }
+
+            // 2. Fallback to Zerodha Kite API
+            tradingCronLogger.info(`[MarketDataService] ➔ Fetching spot LTP from Zerodha Kite for ${instrument}`);
             const ltp = await kite.getLTP([instrument]);
             const price = ltp[instrument]?.last_price ?? 0;
             if (!price) {

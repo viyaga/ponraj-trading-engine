@@ -382,4 +382,77 @@ export class AngelMarketDataService {
             return [];
         }
     }
+
+    /**
+     * Fetch spot LTP from Angel One SmartAPI with fallback to cached candle close.
+     */
+    static async getLTP(indexName: string): Promise<number | null> {
+        const apiKey = env.angelOneApiKey || process.env.ANGEL_ONE_API_KEY;
+        const symbolToken = ANGEL_TOKENS[indexName.toUpperCase().replace('NSE:', '')] || '99926000';
+
+        if (!apiKey) {
+            tradingCronLogger.debug('[AngelMarketDataService] ANGEL_ONE_API_KEY not configured.');
+            return null;
+        }
+
+        try {
+            const token = await this.getValidJwtToken(apiKey);
+            const startTime = Date.now();
+            const response = await fetch(
+                'https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-UserType': 'USER',
+                        'X-SourceID': 'WEB',
+                        'X-ClientLocalIP': '127.0.0.1',
+                        'X-ClientPublicIP': '127.0.0.1',
+                        'X-MACAddress': 'FE:80:00:00:00:00',
+                        'X-PrivateKey': apiKey,
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                    },
+                    body: JSON.stringify({
+                        mode: 'LTP',
+                        exchangeTokens: {
+                            NSE: [symbolToken],
+                        },
+                    }),
+                }
+            );
+
+            const duration = Date.now() - startTime;
+            const text = await response.text();
+            let json: any;
+            try {
+                json = JSON.parse(text);
+            } catch (err) {
+                tradingCronLogger.warn(`[AngelMarketDataService] Quote API parse error (${duration}ms): ${text.slice(0, 100)}`);
+                return null;
+            }
+
+            if (json?.status === true && Array.isArray(json?.data?.fetched)) {
+                const item = json.data.fetched.find((f: any) => String(f.symbolToken) === String(symbolToken));
+                if (item?.ltp) {
+                    const price = Number(item.ltp);
+                    tradingCronLogger.info(`[AngelMarketDataService] ✔ Spot LTP fetched from Angel One quote API: ₹${price.toFixed(2)} (${duration}ms)`);
+                    return price;
+                }
+            }
+
+            // Fallback: check last cached 15m candle close
+            const cached15m = this.candleCache.get(`${symbolToken}:15minute`);
+            if (cached15m?.candles?.length) {
+                const lastCandle = cached15m.candles[cached15m.candles.length - 1];
+                tradingCronLogger.info(`[AngelMarketDataService] ℹ Using last Angel One 15m candle close as spot price fallback: ₹${lastCandle.close.toFixed(2)}`);
+                return lastCandle.close;
+            }
+
+            return null;
+        } catch (err: any) {
+            tradingCronLogger.error(`[AngelMarketDataService] ✖ Failed to fetch LTP from Angel One: ${err.message}`, { error: err });
+            return null;
+        }
+    }
 }
