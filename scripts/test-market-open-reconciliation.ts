@@ -69,10 +69,10 @@ async function runTests() {
             tradingBotId: MOCK_BOT_ID,
             userId: MOCK_USER_ID,
             symbol: 'NIFTY2690824050PE',
-            status: 'open',
+            status: 'entry_pending',
             tradeOutcome: 'pending',
             entryOrderId: 'order-amo-pending-111',
-            entryPrice: 134.70,
+            entryPrice: null,
             quantity: 65,
             stopLossOrderId: null,
             effectiveTP: 20,
@@ -94,8 +94,8 @@ async function runTests() {
         await TradingV2.monitorAndExit(mockConfig, mockKitePending);
 
         const check1 = await TradeState.findById(testTrade1._id);
-        if (check1?.status === 'open' && check1.tradeOutcome === 'pending' && check1.stopLossOrderId === null && gttPlacedCount === 0) {
-            console.log('✔ TEST 1 PASSED: AMO remained pending, no GTT created, trade held open.\n');
+        if (check1?.status === 'entry_pending' && check1.tradeOutcome === 'pending' && check1.stopLossOrderId === null && gttPlacedCount === 0) {
+            console.log('✔ TEST 1 PASSED: Trade remained ENTRY_PENDING, no GTT created, waiting for market open.\n');
         } else {
             console.error('✖ TEST 1 FAILED:', check1);
             process.exit(1);
@@ -112,10 +112,10 @@ async function runTests() {
             tradingBotId: MOCK_BOT_ID,
             userId: MOCK_USER_ID,
             symbol: 'NIFTY2690824050PE',
-            status: 'open',
+            status: 'entry_pending',
             tradeOutcome: 'pending',
             entryOrderId: 'order-amo-rejected-222',
-            entryPrice: 134.70,
+            entryPrice: null,
             quantity: 65,
             stopLossOrderId: null,
         });
@@ -136,7 +136,7 @@ async function runTests() {
 
         const check2 = await TradeState.findById(testTrade2._id);
         if (check2?.status === 'closed' && check2.tradeOutcome === 'cancelled' && check2.stopLossOrderId === null && gttPlacedCount === 0) {
-            console.log('✔ TEST 2 PASSED: Trade marked closed (cancelled) and NO GTT placed.\n');
+            console.log('✔ TEST 2 PASSED: Trade transitioned from ENTRY_PENDING → CLOSED (cancelled) and NO GTT placed.\n');
         } else {
             console.error('✖ TEST 2 FAILED:', check2);
             process.exit(1);
@@ -153,10 +153,10 @@ async function runTests() {
             tradingBotId: MOCK_BOT_ID,
             userId: MOCK_USER_ID,
             symbol: 'NIFTY2690824050PE',
-            status: 'open',
+            status: 'entry_pending',
             tradeOutcome: 'pending',
             entryOrderId: '2095879066292248576',
-            entryPrice: 134.70, // old estimate
+            entryPrice: null,
             quantity: 65,
             stopLossOrderId: null,
             effectiveTP: 20,

@@ -22,8 +22,8 @@ export class Data {
         symbol:       string,  // e.g. 'NIFTY24JAN25000CE'
     ): Promise<ITradeState> {
 
-        // 1. Try to find existing open state
-        let st = await TradeState.findOne({ tradingBotId, status: 'open' });
+        // 1. Try to find existing open or entry_pending state
+        let st = await TradeState.findOne({ tradingBotId, status: { $in: ['open', 'entry_pending'] } });
 
         if (st) {
             // Sync symbol if changed (e.g. expiry rollover)
@@ -31,7 +31,7 @@ export class Data {
                 st.symbol = symbol;
                 await st.save();
             }
-            tradingCronLogger.debug(`[Data] Loaded open state for bot ${tradingBotId}`);
+            tradingCronLogger.debug(`[Data] Loaded active (${st.status}) state for bot ${tradingBotId}`);
             return st;
         }
 
@@ -58,14 +58,14 @@ export class Data {
         const cfg = TradingConfig.getConfig();
         const dailyLossLimitINR = cfg.MAX_LOSS_PER_DAY ?? 2500; // ₹ per day
 
-        // 4. Create new open state
+        // 4. Create new state (starts in 'entry_pending')
         st = await TradeState.create({
             tradingBotId,
             userId,
             symbol,
-            status:       'open',
+            status:       'entry_pending',
             currentLevel: 1,
-            tradeOutcome: 'none',
+            tradeOutcome: 'pending',
             pnl:          0,
             cumulativeFees: 0,
             dailyPnl,
@@ -75,7 +75,7 @@ export class Data {
             quantity: cfg.LOT_SIZE * (cfg.NUMBER_OF_LOTS ?? 1),
         });
 
-        tradingCronLogger.info(`[Data] Created new open state for bot ${tradingBotId} (allTimePnl: ₹${allTimePnl})`);
+        tradingCronLogger.info(`[Data] Created new entry_pending state for bot ${tradingBotId} (allTimePnl: ₹${allTimePnl})`);
         return st;
     }
 
@@ -218,7 +218,7 @@ export class Data {
         tradingBotId: string,
         maxLossPerDay: number
     ): Promise<boolean> {
-        const st = await TradeState.findOne({ tradingBotId, status: 'open' });
+        const st = await TradeState.findOne({ tradingBotId, status: { $in: ['open', 'entry_pending'] } });
         if (!st) return false;
         return (st.dailyPnl ?? 0) <= -Math.abs(maxLossPerDay);
     }
@@ -226,7 +226,7 @@ export class Data {
     // ─── Open position check ──────────────────────────────────────────────────
 
     static async hasOpenPosition(tradingBotId: string): Promise<boolean> {
-        const st = await TradeState.findOne({ tradingBotId, status: 'open' });
+        const st = await TradeState.findOne({ tradingBotId, status: { $in: ['open', 'entry_pending'] } });
         return !!(st?.entryOrderId);
     }
 }

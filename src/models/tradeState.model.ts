@@ -43,7 +43,7 @@ export interface ITradeState {
     // Per-trade effective exit thresholds (set at entry time from per-strategy config)
     effectiveTP?: number | null;    // Target profit % for this trade
     effectiveSL?: number | null;    // Stop loss % for this trade
-    status: 'open' | 'closed';
+    status: 'open' | 'closed' | 'entry_pending';
     updatedAt: Date;
     createdAt: Date;
 }
@@ -53,7 +53,7 @@ const TradeStateSchema: Schema = new Schema(
     {
         userId: { type: String, required: true, index: true },
         tradingBotId: { type: String, required: true, index: true },
-        status: { type: String, enum: ['open', 'closed'], required: true, default: 'open', index: true },
+        status: { type: String, enum: ['open', 'closed', 'entry_pending'], required: true, default: 'entry_pending', index: true },
         symbol: { type: String, required: true, index: true },
         productId: { type: Number },
         currentLevel: { type: Number, required: true, default: 1 },

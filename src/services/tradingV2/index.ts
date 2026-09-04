@@ -89,14 +89,14 @@ export class TradingV2 {
             const kite = new KiteExchange(c.API_KEY, c.ACCESS_TOKEN);
             tradingCronLogger.info(`${tag} ✔ Kite exchange client initialized for API key ${c.API_KEY.substring(0, 4)}****`);
 
-            // ── 2B. Check and monitor any open position first ─────────────
-            tradingCronLogger.info(`${tag} ➔ [Phase 1/5] Checking database for active open positions...`);
-            const existingOpenState = await TradeState.findOne({ tradingBotId: c.id, status: 'open' });
+            // ── 2B. Check and monitor any open/pending position first ─────
+            tradingCronLogger.info(`${tag} ➔ [Phase 1/5] Checking database for active open/pending positions...`);
+            const existingOpenState = await TradeState.findOne({ tradingBotId: c.id, status: { $in: ['open', 'entry_pending'] } });
             if (existingOpenState) {
                 tradingCronLogger.info(
-                    `${tag} 🔍 Found active open trade in DB: Symbol=${existingOpenState.symbol} | ` +
+                    `${tag} 🔍 Found active ${existingOpenState.status} trade in DB: Symbol=${existingOpenState.symbol} | ` +
                     `Qty=${existingOpenState.quantity} | EntryPrice=₹${existingOpenState.entryPrice ?? 'N/A'} | ` +
-                    `OrderId=${existingOpenState.entryOrderId ?? 'N/A'}. Evaluating exit conditions...`
+                    `OrderId=${existingOpenState.entryOrderId ?? 'N/A'}. Evaluating exit/reconciliation conditions...`
                 );
                 await this.monitorAndExit(c, kite);
 
@@ -517,7 +517,7 @@ export class TradingV2 {
             state.symbol          = instrument.tradingsymbol;
             state.side            = 'buy';
             state.quantity        = actualQuantity;
-            state.entryPrice      = actualEntryPrice;
+            state.entryPrice      = variety === 'amo' ? null : actualEntryPrice;
             state.tpPrice         = tpPrice;
             state.slPrice         = slTriggerPrice;
             state.effectiveTP     = effectiveTP;
@@ -526,12 +526,13 @@ export class TradingV2 {
             state.slPercentage    = effectiveSL;
             state.stopLossOrderId = gttTriggerId ? String(gttTriggerId) : null;
             state.tradeOutcome    = 'pending';
+            state.status          = variety === 'amo' ? 'entry_pending' : 'open';
             state.finalScore      = chosenScore;
             state.tradingMode     = strategyName;
             await (state as any).save();
 
             tradingCronLogger.info(
-                `${tag} ✔ Trade state saved (${strategyName}, OrderId: ${state.entryOrderId}, GTT: ${gttTriggerId ?? (variety === 'amo' ? 'Pending market open' : 'Software-monitored')}). ` +
+                `${tag} ✔ Trade state saved (${strategyName}, Status: ${state.status.toUpperCase()}, OrderId: ${state.entryOrderId}, GTT: ${gttTriggerId ?? (variety === 'amo' ? 'Pending market open' : 'Software-monitored')}). ` +
                 `Target: ₹${tpPrice} (+${effectiveTP}%), SL: ₹${slTriggerPrice} (-${effectiveSL}%).`
             );
 
@@ -618,9 +619,9 @@ export class TradingV2 {
     static async monitorAndExit(c: ConfigType, kite: KiteExchange): Promise<void> {
         const tag = `[ExitMonitor:${c.id}]`;
 
-        const state = await TradeState.findOne({ tradingBotId: c.id, status: 'open' });
+        const state = await TradeState.findOne({ tradingBotId: c.id, status: { $in: ['open', 'entry_pending'] } });
         if (!state) {
-            tradingCronLogger.info(`${tag} No active 'open' trade state found in database.`);
+            tradingCronLogger.info(`${tag} No active 'open' or 'entry_pending' trade state found in database.`);
             return;
         }
         if (!state.entryOrderId) {
@@ -628,7 +629,7 @@ export class TradingV2 {
             return;
         }
 
-        tradingCronLogger.info(`${tag} ➔ Monitoring open trade: ${state.symbol} (OrderId: ${state.entryOrderId}, Qty: ${state.quantity})...`);
+        tradingCronLogger.info(`${tag} ➔ Monitoring active trade (${state.status.toUpperCase()}): ${state.symbol} (OrderId: ${state.entryOrderId}, Qty: ${state.quantity})...`);
 
         // Get current order status
         const history = await kite.getOrderHistory(state.entryOrderId);
@@ -651,6 +652,10 @@ export class TradingV2 {
             tradingCronLogger.info(
                 `${tag} ⏳ Entry order ${state.entryOrderId} is pending fill (status: ${latest?.status ?? 'UNKNOWN'}). Skipping exit evaluation until filled.`
             );
+            if (state.status !== 'entry_pending') {
+                state.status = 'entry_pending';
+                await (state as any).save();
+            }
             return;
         }
 
@@ -658,6 +663,13 @@ export class TradingV2 {
         const actualEntryPrice = Number(latest.average_price);
         const actualQuantity = Number(latest.filled_quantity);
         let stateNeedsSave = false;
+
+        // Transition from ENTRY_PENDING to OPEN only after confirmed fill!
+        if (state.status !== 'open') {
+            state.status = 'open';
+            stateNeedsSave = true;
+            tradingCronLogger.info(`${tag} 🟢 Order filled on Zerodha! Status transitioned: ENTRY_PENDING → OPEN`);
+        }
 
         if (state.entryPrice !== actualEntryPrice || state.quantity !== actualQuantity) {
             state.entryPrice = actualEntryPrice;
