@@ -27,9 +27,19 @@ export interface ConfigType {
 
     // ATR-14 Strategy Parameters (3:00 PM - 3:15 PM)
     ATR_PERIOD: number;             // default: 14
-    TARGET_PROFIT_PCT: number;      // exit when premium gains this % (default: 15)
-    STOP_LOSS_PCT: number;          // exit when premium drops this % (default: 8)
+    TARGET_PROFIT_PCT: number;      // legacy: used as fallback if per-strategy TP not set
+    STOP_LOSS_PCT: number;          // legacy: used as fallback if per-strategy SL not set
     MAX_LOSS_PER_DAY: number;       // max daily loss in ₹ (default: 2500)
+
+    // Per-Strategy TP / SL overrides
+    ATR_STRATEGY_TP_PCT:     number; // ATR 15m strategy TP% (default: 10)
+    ATR_STRATEGY_SL_PCT:     number; // ATR 15m strategy SL% (default: 5)
+    UT_BOT_STRATEGY_TP_PCT:  number; // UT Bot 1H strategy TP% (default: 20)
+    UT_BOT_STRATEGY_SL_PCT:  number; // UT Bot 1H strategy SL% (default: 10)
+
+    // Option LTP Range Filter — only trade options priced within this window
+    OPTION_MIN_PREMIUM: number;     // default: 120 (₹)
+    OPTION_MAX_PREMIUM: number;     // default: 150 (₹)
 
     // UT Bot Alerts Strategy (1H Candle - 1st Priority)
     UT_BOT_ENABLED?: boolean;       // default: true
@@ -285,6 +295,16 @@ export interface ActiveSubscribedBot {
     TARGET_PROFIT_PCT: number;
     STOP_LOSS_PCT: number;
     MAX_LOSS_PER_DAY: number;
+
+    // Per-Strategy TP / SL overrides
+    ATR_STRATEGY_TP_PCT:     number;
+    ATR_STRATEGY_SL_PCT:     number;
+    UT_BOT_STRATEGY_TP_PCT:  number;
+    UT_BOT_STRATEGY_SL_PCT:  number;
+
+    // Option LTP Range Filter
+    OPTION_MIN_PREMIUM: number;
+    OPTION_MAX_PREMIUM: number;
 
     // UT Bot Alerts Strategy
     UT_BOT_ENABLED?: boolean;

@@ -22,6 +22,7 @@ import { KiteExchange, NIFTY_STEP, BANKNIFTY_STEP } from './kite-exchange';
 import { MarketDataService } from './market-data.service';
 import { ATR14Strategy, getMinutesToMarketClose, isNSEMarketOpen, is3pmTo315pmWindow } from './strategies/atr14-strategy';
 import { UTBotStrategy } from './strategies/ut-bot-strategy';
+import { OptionSelectorService } from './option-selector.service';
 import { Data } from './data';
 import { TradeState } from '../../models/tradeState.model';
 import { env } from '../../config';
@@ -31,6 +32,7 @@ import {
     skipTradingLogger,
     tradesLogger,
 } from './logger';
+
 
 // Cache NFO instruments for 6 hours (refreshed at market open)
 let instrumentCache: KiteInstrument[] = [];
@@ -190,40 +192,57 @@ export class TradingV2 {
                 `ATR: ${chosenATR.toFixed(1)} | Reasons: ${reasons.join('; ')}`
             );
 
-            // ── 7. Strike selection ───────────────────────────────────────
-            const stepSize   = c.INDEX === 'BANKNIFTY' ? BANKNIFTY_STEP : NIFTY_STEP;
-            const optionType = chosenOptionType; // 'CE' or 'PE'
-            const strike     = kite.selectStrike(spotPrice, optionType, chosenATR, stepSize);
+            // ── 7. Resolve per-strategy TP / SL ─────────────────────────────
+            const effectiveTP = strategyName === 'UT_BOT_1H'
+                ? (c.UT_BOT_STRATEGY_TP_PCT ?? c.TARGET_PROFIT_PCT)
+                : (c.ATR_STRATEGY_TP_PCT    ?? c.TARGET_PROFIT_PCT);
+            const effectiveSL = strategyName === 'UT_BOT_1H'
+                ? (c.UT_BOT_STRATEGY_SL_PCT ?? c.STOP_LOSS_PCT)
+                : (c.ATR_STRATEGY_SL_PCT    ?? c.STOP_LOSS_PCT);
 
             tradingCronLogger.info(
-                `${tag} Strike selected: ${strike} ${optionType} | ` +
-                `Spot: ₹${spotPrice.toFixed(2)} | ATR: ${chosenATR.toFixed(1)} | Step: ${stepSize}`
+                `${tag} Risk params → TP: +${effectiveTP}% | SL: -${effectiveSL}% | ` +
+                `Premium range: ₹${c.OPTION_MIN_PREMIUM}–₹${c.OPTION_MAX_PREMIUM}`
             );
 
-            // ── 8. Load NFO instruments (cached) ──────────────────────────
-            if (!instrumentCache.length || Date.now() - instrumentCacheAt > INSTRUMENT_CACHE_TTL) {
+            // ── 8. Load NFO instruments (cached) ─────────────────────────────
+            const cacheAgeMs   = instrumentCacheAt ? Date.now() - instrumentCacheAt : null;
+            const cacheAgeMins = cacheAgeMs != null ? (cacheAgeMs / 60000).toFixed(1) : 'N/A';
+            const cacheExpired = !instrumentCache.length || (cacheAgeMs != null && cacheAgeMs > INSTRUMENT_CACHE_TTL);
+
+            tradingCronLogger.info(
+                `${tag} [InstrumentCache] Status: ${cacheExpired ? '🔄 STALE — refreshing' : '✅ VALID — reusing'} | ` +
+                `Size: ${instrumentCache.length} instruments | Age: ${cacheAgeMins} min | ` +
+                `TTL: ${(INSTRUMENT_CACHE_TTL / 60000).toFixed(0)} min`
+            );
+
+            if (cacheExpired) {
                 tradingCronLogger.info(`${tag} Refreshing NFO instrument list from Zerodha...`);
                 instrumentCache   = await kite.getInstruments('NFO');
                 instrumentCacheAt = Date.now();
                 tradingCronLogger.info(`${tag} Loaded ${instrumentCache.length} NFO instruments into cache`);
             }
 
-            // ── 9. Find target option instrument ─────────────────────────
-            const instrument = kite.findOptionInstrument(
+            // ── 9. Smart option selection (LTP-filtered) ──────────────────────
+            const stepSize = c.INDEX === 'BANKNIFTY' ? BANKNIFTY_STEP : NIFTY_STEP;
+            const optionType = chosenOptionType; // 'CE' | 'PE'
+
+            const selected = await OptionSelectorService.selectBestOption(
                 instrumentCache,
-                c.INDEX,
-                strike,
+                kite,
+                c,
                 optionType,
-                c.EXPIRY_TYPE
+                spotPrice,
+                stepSize,
+                tag
             );
 
-            if (!instrument) {
-                tradingCycleErrorLogger.error(
-                    `${tag} ✖ No matching instrument found for ${c.INDEX} ${strike} ${optionType} ` +
-                    `(${c.EXPIRY_TYPE} expiry) — skipping order placement`
-                );
+            if (!selected) {
+                // Logged inside selectBestOption — just abort the cycle
                 return;
             }
+
+            const { instrument, ltp: optionLTP } = selected;
 
             tradingCronLogger.info(
                 `${tag} Selected Instrument: ${instrument.tradingsymbol} (Token: ${instrument.instrument_token}) | ` +
@@ -232,6 +251,22 @@ export class TradingV2 {
 
             const quantity = c.LOT_SIZE * (c.NUMBER_OF_LOTS ?? 1);
 
+            tradingCronLogger.info(
+                `${tag} ─── Pre-Order Summary ──────────────────────────────────────\n` +
+                `  Strategy:    ${strategyName}\n` +
+                `  Signal:      ${chosenSignal} (score: ${chosenScore}) | ATR: ${chosenATR.toFixed(2)} pts\n` +
+                `  Instrument:  ${instrument.tradingsymbol} (token: ${instrument.instrument_token})\n` +
+                `  Expiry:      ${instrument.expiry}\n` +
+                `  Spot:        ₹${spotPrice.toFixed(2)}\n` +
+                `  Option LTP:  ₹${optionLTP.toFixed(2)} (at scan time)\n` +
+                `  Strike:      ${instrument.strike} (${instrument.instrument_type})\n` +
+                `  Qty:         ${quantity} units (${c.NUMBER_OF_LOTS} lot × ${c.LOT_SIZE})\n` +
+                `  Order type:  ${c.ORDER_TYPE} | Product: ${c.PRODUCT}\n` +
+                `  TP target:   +${effectiveTP}% → exit above ₹${(optionLTP * (1 + effectiveTP / 100)).toFixed(2)}\n` +
+                `  SL floor:    -${effectiveSL}% → exit below ₹${(optionLTP * (1 - effectiveSL / 100)).toFixed(2)}\n` +
+                `  DRY_RUN:     ${c.DRY_RUN} | IS_TESTING: ${env.isTesting}\n` +
+                `${tag} ────────────────────────────────────────────────────────────`
+            );
             // ── 10. DRY RUN / IS_TESTING GUARD: Stop before placing real trade ──
             if (env.isTesting) {
                 tradesLogger.info(
@@ -242,6 +277,8 @@ export class TradingV2 {
                     `  OrderType: ${c.ORDER_TYPE}\n` +
                     `  Product:   ${c.PRODUCT}\n` +
                     `  Spot:      ₹${spotPrice.toFixed(2)}\n` +
+                    `  Option LTP: ₹${optionLTP.toFixed(2)}\n` +
+                    `  TP:        +${effectiveTP}% | SL: -${effectiveSL}%\n` +
                     `  Signal:    ${chosenSignal} (score: ${chosenScore})\n` +
                     `  ATR:       ${chosenATR.toFixed(2)} pts\n` +
                     `  Reasons:   ${reasons.join('; ')}`
@@ -257,6 +294,8 @@ export class TradingV2 {
                     `  OrderType: ${c.ORDER_TYPE}\n` +
                     `  Product:   ${c.PRODUCT}\n` +
                     `  Spot:      ₹${spotPrice.toFixed(2)}\n` +
+                    `  Option LTP: ₹${optionLTP.toFixed(2)}\n` +
+                    `  TP:        +${effectiveTP}% | SL: -${effectiveSL}%\n` +
                     `  Signal:    ${chosenSignal} (score: ${chosenScore})\n` +
                     `  ATR:       ${chosenATR.toFixed(2)} pts\n` +
                     `  Reasons:   ${reasons.join('; ')}`
@@ -289,6 +328,9 @@ export class TradingV2 {
             state.tradeOutcome = 'pending';
             state.finalScore   = chosenScore;
             state.tradingMode  = strategyName;
+            // Store effective TP/SL in state so monitorAndExit uses correct values
+            state.effectiveTP  = effectiveTP;
+            state.effectiveSL  = effectiveSL;
             await (state as any).save();
 
             tradingCronLogger.info(`${tag} ✔ Trade state saved (${strategyName}, OrderId: ${orderId}). Now monitoring exit via position P&L.`);
@@ -340,15 +382,21 @@ export class TradingV2 {
 
         const pnlPct = ATR14Strategy.calculatePnLPct(entryPrice, currentPrice);
 
+        // Resolve effective TP / SL: prefer values persisted on the state (set at entry),
+        // fall back to current bot config values for legacy open trades.
+        const effectiveTP = (state as any).effectiveTP ?? c.TARGET_PROFIT_PCT;
+        const effectiveSL = (state as any).effectiveSL ?? c.STOP_LOSS_PCT;
+
         tradingCronLogger.debug(
             `${tag} Position: ${state.symbol} | Entry: ₹${entryPrice} | ` +
-            `Current: ₹${currentPrice} | P&L: ${pnlPct.toFixed(2)}%`
+            `Current: ₹${currentPrice} | P&L: ${pnlPct.toFixed(2)}% | ` +
+            `TP: +${effectiveTP}% | SL: -${effectiveSL}%`
         );
 
         // Update trailing SL if enabled
         if (c.IS_TRAILING_SL_ENABLED) {
             const peakPrice = Math.max(currentPrice, state.entryPrice ?? currentPrice);
-            const trailSL   = ATR14Strategy.calculateTrailingSL(peakPrice, c.STOP_LOSS_PCT);
+            const trailSL   = ATR14Strategy.calculateTrailingSL(peakPrice, effectiveSL);
 
             if (currentPrice <= trailSL) {
                 tradingCronLogger.info(`${tag} Trailing SL hit at ₹${currentPrice} (trailSL: ₹${trailSL.toFixed(2)}) — exiting`);

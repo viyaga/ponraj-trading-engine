@@ -24,9 +24,19 @@ export class TradingConfig {
 
         // ATR-14 strategy (3:00 PM - 3:15 PM)
         ATR_PERIOD:           14,
-        TARGET_PROFIT_PCT:    7,     // exit when option premium +7%
-        STOP_LOSS_PCT:        5,     // exit when option premium -5%
+        TARGET_PROFIT_PCT:    10,    // legacy fallback
+        STOP_LOSS_PCT:        5,     // legacy fallback
         MAX_LOSS_PER_DAY:     2500,  // ₹ max daily loss
+
+        // Per-strategy TP / SL overrides
+        ATR_STRATEGY_TP_PCT:    10,  // ATR 15m: exit when premium +10%
+        ATR_STRATEGY_SL_PCT:    5,   // ATR 15m: exit when premium -5%
+        UT_BOT_STRATEGY_TP_PCT: 20,  // UT Bot 1H: exit when premium +20%
+        UT_BOT_STRATEGY_SL_PCT: 10,  // UT Bot 1H: exit when premium -10%
+
+        // Option LTP Range Filter
+        OPTION_MIN_PREMIUM:   120,   // ₹ — only trade options priced ≥120
+        OPTION_MAX_PREMIUM:   150,   // ₹ — only trade options priced ≤150
 
         // UT Bot Alerts Strategy (1H candle - 1st Priority)
         UT_BOT_ENABLED:       true,

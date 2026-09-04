@@ -412,6 +412,144 @@ export class AngelMarketDataService {
     }
 
     /**
+     * Fetch live LTP for a batch of NFO option symbols from Angel One's Quote API.
+     * @param tokens  Array of { symbolToken, tradingsymbol } for NFO options
+     * @returns Map of symbolToken → LTP (₹)
+     */
+    static async getOptionsLTP(
+        tokens: Array<{ symbolToken: string; tradingsymbol: string }>
+    ): Promise<Map<string, number>> {
+        const result = new Map<string, number>();
+        if (!tokens.length) return result;
+
+        const apiKey = env.angelOneApiKey || process.env.ANGEL_ONE_API_KEY;
+        if (!apiKey) {
+            tradingCronLogger.warn('[AngelMarketDataService] ⚠️  getOptionsLTP: ANGEL_ONE_API_KEY not configured — skipping NFO options LTP fetch. Option LTP filter will have no data.');
+            return result;
+        }
+
+        const CHUNK_SIZE = 50;
+        const totalChunks = Math.ceil(tokens.length / CHUNK_SIZE);
+
+        tradingCronLogger.info(
+            `[AngelMarketDataService] getOptionsLTP: fetching LTPs for ${tokens.length} NFO option tokens ` +
+            `(${totalChunks} chunk${totalChunks > 1 ? 's' : ''} of ≤${CHUNK_SIZE})`
+        );
+
+        try {
+            const jwtToken = await this.getValidJwtToken(apiKey);
+            tradingCronLogger.debug(
+                `[AngelMarketDataService] getOptionsLTP: JWT ${jwtToken ? '✔ present' : '✖ missing (will try unauthenticated)'}`
+            );
+
+            for (let i = 0; i < tokens.length; i += CHUNK_SIZE) {
+                const chunk = tokens.slice(i, i + CHUNK_SIZE);
+                const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+                const nfoTokens = chunk.map(t => t.symbolToken);
+                const symbolNames = chunk.map(t => t.tradingsymbol);
+
+                tradingCronLogger.debug(
+                    `[AngelMarketDataService] getOptionsLTP chunk ${chunkNum}/${totalChunks}: ` +
+                    `requesting tokens [${symbolNames.join(', ')}]`
+                );
+
+                const startTime = Date.now();
+                const response = await fetch(
+                    'https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-UserType': 'USER',
+                            'X-SourceID': 'WEB',
+                            'X-ClientLocalIP': '127.0.0.1',
+                            'X-ClientPublicIP': '127.0.0.1',
+                            'X-MACAddress': 'FE:80:00:00:00:00',
+                            'X-PrivateKey': apiKey,
+                            ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {}),
+                        },
+                        body: JSON.stringify({
+                            mode: 'LTP',
+                            exchangeTokens: {
+                                NFO: nfoTokens,
+                            },
+                        }),
+                    }
+                );
+
+                const duration = Date.now() - startTime;
+                const text = await response.text();
+
+                tradingCronLogger.debug(
+                    `[AngelMarketDataService] getOptionsLTP chunk ${chunkNum}/${totalChunks}: ` +
+                    `HTTP ${response.status} in ${duration}ms | raw response: ${text.slice(0, 300)}`
+                );
+
+                let json: any;
+                try {
+                    json = JSON.parse(text);
+                } catch {
+                    tradingCronLogger.warn(
+                        `[AngelMarketDataService] ✖ getOptionsLTP chunk ${chunkNum}/${totalChunks}: ` +
+                        `JSON parse failed (${duration}ms) — HTTP ${response.status}. ` +
+                        `Raw body: ${text.slice(0, 200)}`
+                    );
+                    continue;
+                }
+
+                if (json?.status === true && Array.isArray(json?.data?.fetched)) {
+                    const fetched = json.data.fetched;
+                    const tokensPriced = new Set(fetched.map((f: any) => String(f.symbolToken)));
+                    const missingTokens = nfoTokens.filter(t => !tokensPriced.has(t));
+
+                    for (const item of fetched) {
+                        if (item?.symbolToken && item?.ltp != null) {
+                            result.set(String(item.symbolToken), Number(item.ltp));
+                            tradingCronLogger.debug(
+                                `[AngelMarketDataService]   ↳ ${item.tradingSymbol ?? item.symbolToken}: ₹${Number(item.ltp).toFixed(2)}`
+                            );
+                        }
+                    }
+
+                    tradingCronLogger.info(
+                        `[AngelMarketDataService] ✔ getOptionsLTP chunk ${chunkNum}/${totalChunks} (${duration}ms): ` +
+                        `${fetched.length}/${chunk.length} prices received` +
+                        (missingTokens.length
+                            ? ` | ⚠️  Missing tokens: ${missingTokens.join(', ')}`
+                            : ' | ✅ All tokens priced')
+                    );
+                } else {
+                    tradingCronLogger.warn(
+                        `[AngelMarketDataService] ✖ getOptionsLTP chunk ${chunkNum}/${totalChunks} (${duration}ms): ` +
+                        `Angel One returned non-success. HTTP ${response.status}. ` +
+                        `status=${json?.status}, message="${json?.message ?? 'N/A'}", ` +
+                        `errorcode="${json?.errorcode ?? 'N/A'}". ` +
+                        `Full response: ${text.slice(0, 300)}`
+                    );
+                }
+
+                // Small delay between chunks to stay within rate limits
+                if (i + CHUNK_SIZE < tokens.length) {
+                    tradingCronLogger.debug(`[AngelMarketDataService] getOptionsLTP: waiting 300ms before next chunk...`);
+                    await new Promise(r => setTimeout(r, 300));
+                }
+            }
+        } catch (err: any) {
+            tradingCronLogger.error(
+                `[AngelMarketDataService] ✖ getOptionsLTP: unexpected error — ${err.message}`,
+                { error: err, stack: err.stack }
+            );
+        }
+
+        tradingCronLogger.info(
+            `[AngelMarketDataService] getOptionsLTP complete: ${result.size}/${tokens.length} NFO option LTPs fetched successfully`
+        );
+
+        return result;
+    }
+
+    /**
      * Fetch spot LTP from Angel One SmartAPI with fallback to cached candle close.
      */
     static async getLTP(indexName: string): Promise<number | null> {
@@ -484,3 +622,6 @@ export class AngelMarketDataService {
         }
     }
 }
+
+// Export token map so OptionSelectorService can resolve Angel One tokens for NFO instruments
+export { ANGEL_TOKENS };

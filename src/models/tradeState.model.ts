@@ -40,6 +40,9 @@ export interface ITradeState {
     entryFilledAt?: Date | null;
     consecutiveLowMomentumCycles?: number;
     lastTradeSettledAt?: Date | null;
+    // Per-trade effective exit thresholds (set at entry time from per-strategy config)
+    effectiveTP?: number | null;    // Target profit % for this trade
+    effectiveSL?: number | null;    // Stop loss % for this trade
     status: 'open' | 'closed';
     updatedAt: Date;
     createdAt: Date;
@@ -91,6 +94,9 @@ const TradeStateSchema: Schema = new Schema(
         breakoutTimeframe: { type: String, default: null },
         entryFilledAt: { type: Date, default: null },
         consecutiveLowMomentumCycles: { type: Number, default: 0 },
+        // Per-trade effective exit thresholds
+        effectiveTP: { type: Number, default: null },
+        effectiveSL: { type: Number, default: null },
     },
     {
         timestamps: true
