@@ -275,26 +275,8 @@ export class TradingV2 {
                 `  DRY_RUN:     ${c.DRY_RUN} | IS_TESTING: ${env.isTesting}\n` +
                 `${tag} ────────────────────────────────────────────────────────────`
             );
-            // ── 10. DRY RUN / IS_TESTING GUARD: Stop before placing real trade ──
-            if (env.isTesting) {
-                tradesLogger.info(
-                    `${tag} 🛑 [IS_TESTING=true] Trade stopped before placing real order on Zerodha:\n` +
-                    `  Strategy:  ${strategyName}\n` +
-                    `  Symbol:    ${instrument.tradingsymbol}\n` +
-                    `  Quantity:  ${quantity} (${c.NUMBER_OF_LOTS} lot × ${c.LOT_SIZE})\n` +
-                    `  OrderType: ${c.ORDER_TYPE}\n` +
-                    `  Product:   ${c.PRODUCT}\n` +
-                    `  Spot:      ₹${spotPrice.toFixed(2)}\n` +
-                    `  Option LTP: ₹${optionLTP.toFixed(2)}\n` +
-                    `  TP:        +${effectiveTP}% | SL: -${effectiveSL}%\n` +
-                    `  Signal:    ${chosenSignal} (score: ${chosenScore})\n` +
-                    `  ATR:       ${chosenATR.toFixed(2)} pts\n` +
-                    `  Reasons:   ${reasons.join('; ')}`
-                );
-                return;
-            }
-
-            if (c.DRY_RUN) {
+            // ── 10. DRY RUN GUARD (Preserved when NOT testing) ─────────────────
+            if (!env.isTesting && c.DRY_RUN) {
                 tradesLogger.info(
                     `${tag} [DRY RUN] Would place BUY order (${strategyName}):\n` +
                     `  Symbol:    ${instrument.tradingsymbol}\n` +
@@ -303,7 +285,8 @@ export class TradingV2 {
                     `  Product:   ${c.PRODUCT}\n` +
                     `  Spot:      ₹${spotPrice.toFixed(2)}\n` +
                     `  Option LTP: ₹${optionLTP.toFixed(2)}\n` +
-                    `  TP:        +${effectiveTP}% | SL: -${effectiveSL}%\n` +
+                    `  TP:        +${effectiveTP}% → exit above ₹${(optionLTP * (1 + effectiveTP / 100)).toFixed(2)}\n` +
+                    `  SL:        -${effectiveSL}% → exit below ₹${(optionLTP * (1 - effectiveSL / 100)).toFixed(2)}\n` +
                     `  Signal:    ${chosenSignal} (score: ${chosenScore})\n` +
                     `  ATR:       ${chosenATR.toFixed(2)} pts\n` +
                     `  Reasons:   ${reasons.join('; ')}`
@@ -311,37 +294,115 @@ export class TradingV2 {
                 return;
             }
 
-            // ── 11. Place real entry order ────────────────────────────────
-            tradingCronLogger.info(`${tag} ➔ Placing real entry BUY order on Zerodha for ${instrument.tradingsymbol} (Qty: ${quantity})...`);
-            const orderResult = await kite.placeOrder({
-                exchange:         'NFO',
-                tradingsymbol:    instrument.tradingsymbol,
-                transaction_type: 'BUY',
-                quantity,
-                order_type:       c.ORDER_TYPE,
-                product:          c.PRODUCT,
-                validity:         'DAY',
-                tag:              c.id.substring(0, 20), // Kite tag max 20 chars
-            });
+            // ── 11. Calculate TP and SL prices (rounded to 0.05 NSE tick size) ──
+            const roundTick = (val: number) => Math.round(val * 20) / 20;
+            const tpPrice = roundTick(optionLTP * (1 + effectiveTP / 100));
+            const slPrice = roundTick(optionLTP * (1 - effectiveSL / 100));
+            const isMarketOpen = isNSEMarketOpen();
+            const variety = (!isMarketOpen && env.isTesting) ? 'amo' : 'regular';
 
-            const orderId = orderResult.order_id;
-            tradesLogger.info(`${tag} ✅ Order placed successfully: ${orderId} | ${instrument.tradingsymbol} | Qty: ${quantity} | Strategy: ${strategyName}`);
+            tradingCronLogger.info(
+                `${tag} ➔ ${env.isTesting ? '🧪 [IS_TESTING=true] Trying order with TP & SL on Zerodha' : 'Placing real entry order'}:\n` +
+                `  Symbol:    ${instrument.tradingsymbol}\n` +
+                `  Quantity:  ${quantity} (${c.NUMBER_OF_LOTS} lot × ${c.LOT_SIZE})\n` +
+                `  Entry LTP: ₹${optionLTP.toFixed(2)}\n` +
+                `  Target TP: ₹${tpPrice.toFixed(2)} (+${effectiveTP}%)\n` +
+                `  Stop SL:   ₹${slPrice.toFixed(2)} (-${effectiveSL}%)\n` +
+                `  Variety:   ${variety} (Market open: ${isMarketOpen})\n` +
+                `  Type:      ${c.ORDER_TYPE} | Product: ${c.PRODUCT}`
+            );
 
-            // ── 12. Save trade state ──────────────────────────────────────
+            // ── 11A. Place Primary Entry BUY Order on Zerodha ─────────────────
+            let orderId: string | null = null;
+            try {
+                const orderResult = await kite.placeOrder({
+                    exchange:         'NFO',
+                    tradingsymbol:    instrument.tradingsymbol,
+                    transaction_type: 'BUY',
+                    quantity,
+                    order_type:       c.ORDER_TYPE,
+                    product:          c.PRODUCT,
+                    validity:         'DAY',
+                    price:            c.ORDER_TYPE === 'LIMIT' ? optionLTP : undefined,
+                    variety:          variety as any,
+                    tag:              c.id.substring(0, 20), // Kite tag max 20 chars
+                });
+                orderId = orderResult.order_id;
+                tradesLogger.info(`${tag} ✅ Entry BUY order accepted by Zerodha: order_id=${orderId} | ${instrument.tradingsymbol} | Qty: ${quantity} | Strategy: ${strategyName}`);
+            } catch (orderErr: any) {
+                tradesLogger.error(`${tag} ✖ Entry order failed on Zerodha: ${orderErr.message}`, {
+                    error: orderErr,
+                    variety,
+                    symbol: instrument.tradingsymbol,
+                });
+                if (!env.isTesting) throw orderErr;
+            }
+
+            // ── 11B. Try Placing GTT OCO (TP + SL) Order on Zerodha ───────────
+            let gttTriggerId: number | null = null;
+            try {
+                tradingCronLogger.info(
+                    `${tag} ➔ Placing native GTT OCO (TP/SL) on Zerodha: ` +
+                    `SL Trigger=₹${slPrice}, TP Trigger=₹${tpPrice}...`
+                );
+                const gttResult = await kite.placeGTT({
+                    trigger_type:   'two-leg',
+                    tradingsymbol:  instrument.tradingsymbol,
+                    exchange:       'NFO',
+                    trigger_values: [slPrice, tpPrice], // sorted: [stoploss, target]
+                    last_price:     optionLTP,
+                    orders: [
+                        {
+                            transaction_type: 'SELL',
+                            quantity,
+                            order_type:       'LIMIT',
+                            product:          c.PRODUCT,
+                            price:            slPrice,
+                        },
+                        {
+                            transaction_type: 'SELL',
+                            quantity,
+                            order_type:       'LIMIT',
+                            product:          c.PRODUCT,
+                            price:            tpPrice,
+                        },
+                    ],
+                });
+                gttTriggerId = gttResult.trigger_id;
+                tradesLogger.info(
+                    `${tag} 🎯 Zerodha GTT OCO (TP + SL) order placed successfully! ` +
+                    `Trigger ID: ${gttTriggerId} | SL: ₹${slPrice} (-${effectiveSL}%) | TP: ₹${tpPrice} (+${effectiveTP}%)`
+                );
+            } catch (gttErr: any) {
+                tradingCronLogger.warn(
+                    `${tag} ⚠️ GTT placement on Zerodha was not accepted: ${gttErr.message}. ` +
+                    `Engine monitorAndExit will actively monitor and execute TP (+${effectiveTP}%) and SL (-${effectiveSL}%) via cron.`
+                );
+            }
+
+            // ── 12. Save trade state with TP / SL targets ─────────────────────
             const state = await Data.getOrCreateState(c.id, c.USER_ID, instrument.tradingsymbol);
-            state.entryOrderId = orderId;
-            state.symbol       = instrument.tradingsymbol;
-            state.side         = 'buy';
-            state.quantity     = quantity;
-            state.tradeOutcome = 'pending';
-            state.finalScore   = chosenScore;
-            state.tradingMode  = strategyName;
-            // Store effective TP/SL in state so monitorAndExit uses correct values
-            state.effectiveTP  = effectiveTP;
-            state.effectiveSL  = effectiveSL;
+            state.entryOrderId    = orderId ?? `test-${Date.now().toString(36)}`;
+            state.symbol          = instrument.tradingsymbol;
+            state.side            = 'buy';
+            state.quantity        = quantity;
+            state.entryPrice      = optionLTP;
+            state.tpPrice         = tpPrice;
+            state.slPrice         = slPrice;
+            state.effectiveTP     = effectiveTP;
+            state.effectiveSL     = effectiveSL;
+            state.tpPercentage    = effectiveTP;
+            state.slPercentage    = effectiveSL;
+            state.stopLossOrderId = gttTriggerId ? String(gttTriggerId) : null;
+            state.tradeOutcome    = 'pending';
+            state.finalScore      = chosenScore;
+            state.tradingMode     = strategyName;
             await (state as any).save();
 
-            tradingCronLogger.info(`${tag} ✔ Trade state saved (${strategyName}, OrderId: ${orderId}). Now monitoring exit via position P&L.`);
+            tradingCronLogger.info(
+                `${tag} ✔ Trade state saved (${strategyName}, OrderId: ${state.entryOrderId}, GTT: ${gttTriggerId ?? 'Software-monitored'}). ` +
+                `Target: ₹${tpPrice} (+${effectiveTP}%), SL: ₹${slPrice} (-${effectiveSL}%).`
+            );
 
         } catch (err: any) {
             tradingCycleErrorLogger.error(`${tag} ✖ UNCAUGHT CYCLE ERROR: ${err.message}`, {

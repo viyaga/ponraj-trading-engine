@@ -303,6 +303,44 @@ export class KiteExchange {
     }
 
     /**
+     * Place a GTT (Good Till Triggered) order on Zerodha.
+     * Supports OCO (two-leg) for Target Profit and Stop Loss.
+     */
+    async placeGTT(params: {
+        trigger_type: 'two-leg' | 'single';
+        tradingsymbol: string;
+        exchange: string;
+        trigger_values: number[];
+        last_price: number;
+        orders: Array<{
+            transaction_type: 'BUY' | 'SELL';
+            quantity: number;
+            order_type: 'LIMIT' | 'MARKET';
+            product: string;
+            price: number;
+        }>;
+    }): Promise<{ trigger_id: number }> {
+        tradingCronLogger.info(`[KiteExchange] ➔ Sending GTT to Zerodha: ${params.tradingsymbol} (${params.trigger_type})`, { params });
+        const startTime = Date.now();
+        try {
+            const result = await this.kc.placeGTT(params);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.info(`[KiteExchange] ✔ GTT successfully placed on Zerodha (${duration}ms): trigger_id=${result.trigger_id}`, {
+                trigger_id: result.trigger_id,
+                tradingsymbol: params.tradingsymbol,
+            });
+            return { trigger_id: Number(result.trigger_id) };
+        } catch (err: any) {
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ GTT placement FAILED by Zerodha (${duration}ms): ${err.message}`, {
+                error: err,
+                params,
+            });
+            throw err;
+        }
+    }
+
+    /**
      * Cancel an open order.
      */
     async cancelOrder(orderId: string, variety: string = 'regular'): Promise<void> {
