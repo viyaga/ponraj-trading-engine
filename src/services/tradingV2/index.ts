@@ -257,7 +257,21 @@ export class TradingV2 {
                 `Expiry: ${instrument.expiry} | LotSize: ${instrument.lot_size}`
             );
 
-            const quantity = c.LOT_SIZE * (c.NUMBER_OF_LOTS ?? 1);
+            // In testing mode: execute trade ONLY for the smallest amount possible (strictly 1 lot)
+            const numLots  = env.isTesting ? 1 : (c.NUMBER_OF_LOTS ?? 1);
+            const lotSize  = instrument.lot_size || c.LOT_SIZE || (c.INDEX === 'BANKNIFTY' ? 15 : 25);
+            const quantity = lotSize * numLots;
+            const capitalOutlay = optionLTP * quantity;
+
+            if (env.isTesting) {
+                tradingCronLogger.warn(
+                    `${tag} 🛡️ [IS_TESTING=true] Smallest amount enforced:\n` +
+                    `  Lots:         1 lot (minimum possible, config was ${c.NUMBER_OF_LOTS ?? 1})\n` +
+                    `  LotSize:      ${lotSize} units\n` +
+                    `  Quantity:     ${quantity} units\n` +
+                    `  Total Outlay: ₹${capitalOutlay.toFixed(2)} (at ₹${optionLTP.toFixed(2)} LTP)`
+                );
+            }
 
             tradingCronLogger.info(
                 `${tag} ─── Pre-Order Summary ──────────────────────────────────────\n` +
@@ -268,7 +282,8 @@ export class TradingV2 {
                 `  Spot:        ₹${spotPrice.toFixed(2)}\n` +
                 `  Option LTP:  ₹${optionLTP.toFixed(2)} (at scan time)\n` +
                 `  Strike:      ${instrument.strike} (${instrument.instrument_type})\n` +
-                `  Qty:         ${quantity} units (${c.NUMBER_OF_LOTS} lot × ${c.LOT_SIZE})\n` +
+                `  Qty:         ${quantity} units (${numLots} lot × ${lotSize})\n` +
+                `  Est Capital: ₹${capitalOutlay.toFixed(2)}\n` +
                 `  Order type:  ${c.ORDER_TYPE} | Product: ${c.PRODUCT}\n` +
                 `  TP target:   +${effectiveTP}% → exit above ₹${(optionLTP * (1 + effectiveTP / 100)).toFixed(2)}\n` +
                 `  SL floor:    -${effectiveSL}% → exit below ₹${(optionLTP * (1 - effectiveSL / 100)).toFixed(2)}\n` +
@@ -280,11 +295,12 @@ export class TradingV2 {
                 tradesLogger.info(
                     `${tag} [DRY RUN] Would place BUY order (${strategyName}):\n` +
                     `  Symbol:    ${instrument.tradingsymbol}\n` +
-                    `  Quantity:  ${quantity} (${c.NUMBER_OF_LOTS} lot × ${c.LOT_SIZE})\n` +
+                    `  Quantity:  ${quantity} (${numLots} lot × ${lotSize})\n` +
                     `  OrderType: ${c.ORDER_TYPE}\n` +
                     `  Product:   ${c.PRODUCT}\n` +
                     `  Spot:      ₹${spotPrice.toFixed(2)}\n` +
                     `  Option LTP: ₹${optionLTP.toFixed(2)}\n` +
+                    `  Est Capital: ₹${capitalOutlay.toFixed(2)}\n` +
                     `  TP:        +${effectiveTP}% → exit above ₹${(optionLTP * (1 + effectiveTP / 100)).toFixed(2)}\n` +
                     `  SL:        -${effectiveSL}% → exit below ₹${(optionLTP * (1 - effectiveSL / 100)).toFixed(2)}\n` +
                     `  Signal:    ${chosenSignal} (score: ${chosenScore})\n` +
@@ -302,9 +318,10 @@ export class TradingV2 {
             const variety = (!isMarketOpen && env.isTesting) ? 'amo' : 'regular';
 
             tradingCronLogger.info(
-                `${tag} ➔ ${env.isTesting ? '🧪 [IS_TESTING=true] Trying order with TP & SL on Zerodha' : 'Placing real entry order'}:\n` +
+                `${tag} ➔ ${env.isTesting ? '🧪 [IS_TESTING=true] Trying order with TP & SL on Zerodha (Smallest Amount)' : 'Placing real entry order'}:\n` +
                 `  Symbol:    ${instrument.tradingsymbol}\n` +
-                `  Quantity:  ${quantity} (${c.NUMBER_OF_LOTS} lot × ${c.LOT_SIZE})\n` +
+                `  Quantity:  ${quantity} (${numLots} lot × ${lotSize})\n` +
+                `  Est Outlay: ₹${capitalOutlay.toFixed(2)}\n` +
                 `  Entry LTP: ₹${optionLTP.toFixed(2)}\n` +
                 `  Target TP: ₹${tpPrice.toFixed(2)} (+${effectiveTP}%)\n` +
                 `  Stop SL:   ₹${slPrice.toFixed(2)} (-${effectiveSL}%)\n` +

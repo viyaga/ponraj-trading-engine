@@ -20,6 +20,7 @@
 import { KiteInstrument, OptionType, ConfigType } from './type';
 import { KiteExchange } from './kite-exchange';
 import { tradingCronLogger, tradingCycleErrorLogger } from './logger';
+import env from '../../config/env';
 
 // How many strikes on each side of ATM to check (e.g. 6 = ATM, ATM±50, ATM±100, ..., ATM±300)
 const STRIKE_SCAN_RADIUS      = 6;
@@ -266,11 +267,17 @@ export class OptionSelectorService {
             return null;
         }
 
-        // 6. Pick best:  (a) closest to ATM first  (b) highest LTP as tiebreaker
-        inRange.sort((a, b) => {
-            if (a.strikeDistance !== b.strikeDistance) return a.strikeDistance - b.strikeDistance;
-            return b.ltp - a.ltp;
-        });
+        // 6. Pick best:
+        // In testing mode: pick option with lowest LTP to execute for the smallest amount possible
+        // In live mode: (a) closest to ATM first  (b) highest LTP as tiebreaker
+        if (env.isTesting) {
+            inRange.sort((a, b) => a.ltp - b.ltp);
+        } else {
+            inRange.sort((a, b) => {
+                if (a.strikeDistance !== b.strikeDistance) return a.strikeDistance - b.strikeDistance;
+                return b.ltp - a.ltp;
+            });
+        }
 
         tradingCronLogger.info(
             `${tag} [OptionSelector] Ranking of ${inRange.length} in-range option(s):\n` +
