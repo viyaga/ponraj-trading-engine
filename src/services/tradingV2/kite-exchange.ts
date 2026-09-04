@@ -81,7 +81,11 @@ export class KiteExchange {
         from: Date,
         to: Date
     ): Promise<Candle[]> {
-        tradingCronLogger.info(`[KiteExchange] ➔ Requesting historical candles from Zerodha: ${instrument} (${interval}) from ${from.toISOString()} to ${to.toISOString()}`);
+        tradingCronLogger.info(`[KiteExchange] ➔ Requesting historical candles from Zerodha: ${instrument} (${interval}) from ${from.toISOString()} to ${to.toISOString()}`, {
+            apiKeyMasked: `${this.apiKey.slice(0, 4)}...${this.apiKey.slice(-4)}`,
+            hasAccessToken: Boolean(this.kc?.access_token),
+            accessTokenPrefix: this.kc?.access_token ? `${String(this.kc.access_token).slice(0, 8)}...` : 'None',
+        });
         const startTime = Date.now();
         try {
             const raw = await this.kc.getHistoricalData(
@@ -98,7 +102,12 @@ export class KiteExchange {
             return candles;
         } catch (err: any) {
             const duration = Date.now() - startTime;
-            tradingCronLogger.error(`[KiteExchange] ✖ getCandlestickData failed from Zerodha for ${instrument} (${duration}ms): ${err.message}`, { error: err });
+            tradingCronLogger.error(`[KiteExchange] ✖ getCandlestickData failed from Zerodha for ${instrument} (${duration}ms): ${err.message}`, {
+                error: err,
+                errorType: err?.error_type,
+                statusCode: err?.status_code,
+                message: err?.message,
+            });
             return [];
         }
     }
@@ -108,7 +117,11 @@ export class KiteExchange {
      * @param instruments  e.g. ["NSE:NIFTY 50", "NFO:NIFTY24JAN25000CE"]
      */
     async getLTP(instruments: string[]): Promise<Record<string, { last_price: number }>> {
-        tradingCronLogger.info(`[KiteExchange] ➔ Requesting LTP from Zerodha for ${instruments.length} instruments: ${instruments.join(', ')}`);
+        tradingCronLogger.info(`[KiteExchange] ➔ Requesting LTP from Zerodha for ${instruments.length} instruments: ${instruments.join(', ')}`, {
+            apiKeyMasked: `${this.apiKey.slice(0, 4)}...${this.apiKey.slice(-4)}`,
+            hasAccessToken: Boolean(this.kc?.access_token),
+            accessTokenPrefix: this.kc?.access_token ? `${String(this.kc.access_token).slice(0, 8)}...` : 'None',
+        });
         const startTime = Date.now();
         try {
             const res = await this.kc.getLTP(instruments);
@@ -117,7 +130,12 @@ export class KiteExchange {
             return res as Record<string, { last_price: number }>;
         } catch (err: any) {
             const duration = Date.now() - startTime;
-            tradingCronLogger.error(`[KiteExchange] ✖ getLTP failed from Zerodha (${duration}ms): ${err.message}`, { error: err });
+            tradingCronLogger.error(`[KiteExchange] ✖ getLTP failed from Zerodha (${duration}ms): ${err.message}`, {
+                error: err,
+                errorType: err?.error_type,
+                statusCode: err?.status_code,
+                message: err?.message,
+            });
             return {};
         }
     }
