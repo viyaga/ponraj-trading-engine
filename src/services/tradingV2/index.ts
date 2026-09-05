@@ -145,6 +145,7 @@ export class TradingV2 {
             let chosenOptionType: OptionType | null = null;
             let chosenATR: number = 0;
             let chosenScore: number = 0;
+            let chosenSignalCandleTimestamp: number | null = null;
             let strategyName: string = '';
             let reasons: string[] = [];
             let skipReasons: string[] = [];
@@ -169,17 +170,34 @@ export class TradingV2 {
                     `${tag} [UTBot 1H] Result → Signal: ${utResult.signal} | Option: ${utResult.optionType ?? 'NONE'} | ` +
                     `Score: ${utResult.score} | ATR: ${utResult.atr.toFixed(1)} | ` +
                     `TrailingStop: ₹${utResult.trailingStop.toFixed(1)} | ` +
+                    `CandleTimestamp: ${utResult.signalCandleTimestamp ? new Date(utResult.signalCandleTimestamp).toISOString() : 'N/A'} | ` +
                     `Reasons: [${utResult.reasons.join('; ') || 'None'}]` +
                     (utResult.skipReasons.length ? ` | Skip: [${utResult.skipReasons.join('; ')}]` : '')
                 );
 
                 if (utResult.signal !== 'NONE') {
-                    chosenSignal = utResult.signal;
-                    chosenOptionType = utResult.optionType;
-                    chosenATR = utResult.atr;
-                    chosenScore = utResult.score;
-                    strategyName = 'UT_BOT_1H';
-                    reasons = utResult.reasons;
+                    // Prevent duplicate trade executions for the same 1H candle signal
+                    const alreadyTraded = utResult.signalCandleTimestamp ? await TradeState.exists({
+                        tradingBotId: c.id,
+                        signalCandleTimestamp: utResult.signalCandleTimestamp,
+                    }) : null;
+
+                    if (alreadyTraded) {
+                        const candleTimeStr = utResult.signalCandleTimestamp
+                            ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
+                            : 'unknown';
+                        const skipMsg = `UT Bot (1H): Signal on candle [${candleTimeStr} IST] was already executed for bot ${c.id}`;
+                        skipReasons.push(skipMsg);
+                        tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] Candle [${candleTimeStr} IST] already traded — skipping duplicate execution`);
+                    } else {
+                        chosenSignal = utResult.signal;
+                        chosenOptionType = utResult.optionType;
+                        chosenATR = utResult.atr;
+                        chosenScore = utResult.score;
+                        chosenSignalCandleTimestamp = utResult.signalCandleTimestamp ?? null;
+                        strategyName = 'UT_BOT_1H';
+                        reasons = utResult.reasons;
+                    }
                 } else if (utResult.skipReasons.length) {
                     skipReasons.push(...utResult.skipReasons);
                 }
@@ -529,6 +547,7 @@ export class TradingV2 {
             state.status          = variety === 'amo' ? 'entry_pending' : 'open';
             state.finalScore      = chosenScore;
             state.tradingMode     = strategyName;
+            state.signalCandleTimestamp = chosenSignalCandleTimestamp;
             await (state as any).save();
 
             tradingCronLogger.info(

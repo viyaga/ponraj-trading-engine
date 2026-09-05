@@ -43,6 +43,7 @@ export interface ITradeState {
     // Per-trade effective exit thresholds (set at entry time from per-strategy config)
     effectiveTP?: number | null;    // Target profit % for this trade
     effectiveSL?: number | null;    // Stop loss % for this trade
+    signalCandleTimestamp?: number | null; // Timestamp of the candle that generated this trade's signal
     status: 'open' | 'closed' | 'entry_pending';
     updatedAt: Date;
     createdAt: Date;
@@ -97,6 +98,7 @@ const TradeStateSchema: Schema = new Schema(
         // Per-trade effective exit thresholds
         effectiveTP: { type: Number, default: null },
         effectiveSL: { type: Number, default: null },
+        signalCandleTimestamp: { type: Number, default: null, index: true },
     },
     {
         timestamps: true
@@ -105,6 +107,7 @@ const TradeStateSchema: Schema = new Schema(
 
 TradeStateSchema.index({ updatedAt: 1, tradingBotId: 1 });
 TradeStateSchema.index({ tradingBotId: 1, status: 1 });
+TradeStateSchema.index({ tradingBotId: 1, signalCandleTimestamp: 1 });
 
 // Export the model with generic type parameter
 export const TradeState = mongoose.model<ITradeState>(

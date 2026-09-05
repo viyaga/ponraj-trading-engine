@@ -105,14 +105,14 @@ export class MarketDataService {
         }
 
         const fetchPromise = (async () => {
-            const now  = Date.now();
-            const currentCandleStart = Math.floor(now / ONE_HOUR_MS) * ONE_HOUR_MS;
+            const now = Date.now();
+            const boundary1h = AngelMarketDataService.candleBoundary1h(now);
 
             // 1. Try Angel One SmartAPI (Free)
             try {
                 const angelCandles = await AngelMarketDataService.get1hCandles(index);
                 if (angelCandles && angelCandles.length > 0) {
-                    const filtered = angelCandles.filter(c => c.timestamp < currentCandleStart);
+                    const filtered = angelCandles.filter(c => c.timestamp < boundary1h);
                     tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One 1h candles: ${filtered.length} completed candles for ${index}`);
                     return filtered;
                 }
@@ -121,13 +121,13 @@ export class MarketDataService {
                 tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One 1h candle fetch failed, falling back to Zerodha: ${err.message}`, { error: err });
             }
 
-            // 2. Fallback to Zerodha Kite API
-            const from = new Date(now - 100 * ONE_HOUR_MS);
+            // 2. Fallback to Zerodha Kite API (45 calendar days = ~30 trading days = ~180-200 candles for full Wilder's RMA stabilization)
+            const from = new Date(now - 45 * 24 * ONE_HOUR_MS);
             const to   = new Date(now);
 
             tradingCronLogger.info(`[MarketDataService] ➔ Fetching 1h candles from Zerodha Kite: ${instrument} (${from.toISOString()} to ${to.toISOString()})`);
             const candles = await kite.getCandlestickData(instrument, '60minute', from, to);
-            const filtered = candles.filter(c => c.timestamp < currentCandleStart);
+            const filtered = candles.filter(c => c.timestamp < boundary1h);
             tradingCronLogger.info(`[MarketDataService] ✔ Received ${candles.length} raw 1h candles from Zerodha (${filtered.length} completed candles)`);
             return filtered;
         })();

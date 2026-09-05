@@ -270,6 +270,7 @@ export interface UTBotSignalResult {
     score: number;
     reasons: string[];
     skipReasons: string[];
+    signalCandleTimestamp?: number; // Epoch ms of the completed 1H candle that produced this signal
 }
 
 /* ───────────────────────────────────────

@@ -31,7 +31,7 @@ export class AngelMarketDataService {
 
     // Bootstrap lookback: how many calendar days to fetch on the very first load
     private static readonly BOOTSTRAP_DAYS_15M =  2;  // ~50 candles, need 15
-    private static readonly BOOTSTRAP_DAYS_1H  =  5;  // ~35 candles, need 12
+    private static readonly BOOTSTRAP_DAYS_1H  = 30;  // ~180 candles, ensures Wilder's RMA full stabilization matching TradingView
 
     // Incremental lookback: how many candle periods to re-fetch when a new candle forms
     private static readonly INCREMENTAL_PERIODS_15M = 3; // fetch last 3 × 15m = 45 min window
@@ -70,6 +70,26 @@ export class AngelMarketDataService {
      */
     private static candleBoundary(nowMs: number, periodMs: number): number {
         return Math.floor(nowMs / periodMs) * periodMs;
+    }
+
+    /**
+     * Returns the start timestamp (ms) of the 1-hour candle period in IST that contains `nowMs`.
+     * NSE 1-hour candles are anchored to 09:15 IST (e.g. 09:15–10:15, 10:15–11:15).
+     * Returns the epoch ms of the current forming candle's start (e.g., at 10:45 IST -> 10:15 IST).
+     */
+    public static candleBoundary1h(nowMs: number): number {
+        const IST_OFFSET_MS = 19800000; // (5 * 60 + 30) * 60 * 1000
+        const FIFTEEN_MINS_MS = 900000;  // 15 * 60 * 1000
+        const ONE_HOUR_MS = 3600000;
+
+        const istTime = nowMs + IST_OFFSET_MS;
+        const minuteMs = istTime % ONE_HOUR_MS;
+
+        const candleStartIST = minuteMs >= FIFTEEN_MINS_MS
+            ? istTime - minuteMs + FIFTEEN_MINS_MS
+            : istTime - minuteMs - ONE_HOUR_MS + FIFTEEN_MINS_MS;
+
+        return candleStartIST - IST_OFFSET_MS;
     }
 
     /**
@@ -413,7 +433,7 @@ export class AngelMarketDataService {
         const symbolToken = ANGEL_TOKENS[indexName.toUpperCase().replace('NSE:', '')] || '99926000';
         const cacheKey    = `${symbolToken}:60minute`;
         const nowMs       = Date.now();
-        const boundary    = this.candleBoundary(nowMs, this.ONE_HOUR_MS);
+        const boundary    = this.candleBoundary1h(nowMs);
 
         const cached = this.candleCache.get(cacheKey);
 

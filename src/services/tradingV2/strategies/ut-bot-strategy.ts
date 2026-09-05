@@ -165,14 +165,14 @@ export class UTBotStrategy {
             // EMA(src, 1) = src
             const emaValue = src;
             const emaPrev = srcPrev;
-            const stopPrev = trailingStopSeries[i - 1];
+            const stopPrev = previousStop;
 
             // ta.crossover(emaValue, xATRTrailingStop) -> previous was <= and current is >
             const above = emaPrev <= stopPrev && emaValue > xATRTrailingStop;
             // ta.crossover(xATRTrailingStop, emaValue) -> previous was <= and current is >
             const below = stopPrev <= emaPrev && xATRTrailingStop > emaValue;
 
-            // Buy & Sell triggers
+            // Buy & Sell triggers (strictly identical to TradingView Pine Script)
             const buy = src > xATRTrailingStop && above;
             const sell = src < xATRTrailingStop && below;
 
@@ -215,7 +215,8 @@ export class UTBotStrategy {
             return result;
         }
 
-        const calculated = this.calculateUTBotSeries(candles1h, config);
+        const sorted = [...candles1h].sort((a, b) => a.timestamp - b.timestamp);
+        const calculated = this.calculateUTBotSeries(sorted, config);
         const lastIdx = calculated.buySignals.length - 1;
 
         const isBuy = calculated.buySignals[lastIdx];
@@ -223,29 +224,39 @@ export class UTBotStrategy {
         const currentStop = calculated.trailingStopSeries[lastIdx];
         const currentATR = calculated.atrSeries[lastIdx];
         const currentPos = calculated.posSeries[lastIdx];
+        const signalCandle = sorted[lastIdx];
 
         result.atr = currentATR;
         result.trailingStop = currentStop;
+        result.signalCandleTimestamp = signalCandle.timestamp;
+
+        const candleTimeStr = new Date(signalCandle.timestamp).toLocaleTimeString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        });
 
         if (isBuy) {
             result.signal = 'BULL';
             result.optionType = 'CE';
             result.score = 100;
             result.reasons.push(
-                `UT Bot BUY Signal (1H): Price (${spotPrice.toFixed(2)}) > Trailing Stop (${currentStop.toFixed(2)}) ` +
-                `with bullish crossover (ATR: ${currentATR.toFixed(2)}, Key: ${config.keyValue})`
+                `UT Bot BUY Signal (1H): Candle [${candleTimeStr} IST] Close (${signalCandle.close.toFixed(2)}) > Trailing Stop (${currentStop.toFixed(2)}) ` +
+                `with bullish crossover (Spot: ₹${spotPrice.toFixed(2)}, ATR: ${currentATR.toFixed(2)}, Key: ${config.keyValue})`
             );
         } else if (isSell) {
             result.signal = 'BEAR';
             result.optionType = 'PE';
             result.score = 100;
             result.reasons.push(
-                `UT Bot SELL Signal (1H): Price (${spotPrice.toFixed(2)}) < Trailing Stop (${currentStop.toFixed(2)}) ` +
-                `with bearish crossover (ATR: ${currentATR.toFixed(2)}, Key: ${config.keyValue})`
+                `UT Bot SELL Signal (1H): Candle [${candleTimeStr} IST] Close (${signalCandle.close.toFixed(2)}) < Trailing Stop (${currentStop.toFixed(2)}) ` +
+                `with bearish crossover (Spot: ₹${spotPrice.toFixed(2)}, ATR: ${currentATR.toFixed(2)}, Key: ${config.keyValue})`
             );
         } else {
             result.skipReasons.push(
-                `UT Bot (1H): No fresh crossover on completed 1H candle. Current pos: ${currentPos === 1 ? 'LONG' : currentPos === -1 ? 'SHORT' : 'FLAT'}, TrailingStop: ${currentStop.toFixed(2)}`
+                `UT Bot (1H): No fresh crossover on completed 1H candle [${candleTimeStr} IST Close: ${signalCandle.close.toFixed(2)}]. ` +
+                `Current pos: ${currentPos === 1 ? 'LONG' : currentPos === -1 ? 'SHORT' : 'FLAT'}, TrailingStop: ₹${currentStop.toFixed(2)}`
             );
         }
 
