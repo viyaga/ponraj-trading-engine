@@ -17,10 +17,15 @@ import { tradingCronLogger, skipTradingLogger } from '../logger';
 
 // ─── 3:00 PM - 3:15 PM Trading Window (IST) ──────────────────────────────────
 
-export const TRADING_WINDOW_START_HOUR = 15; // 3:00 PM IST
-export const TRADING_WINDOW_START_MIN  = 0;
-export const TRADING_WINDOW_END_HOUR   = 15; // 3:15 PM IST
-export const TRADING_WINDOW_END_MIN    = 15;
+export const BOT_TRADING_WINDOW_START_HOUR = 9;  // 9:30 AM IST
+export const BOT_TRADING_WINDOW_START_MIN  = 30;
+export const BOT_TRADING_WINDOW_END_HOUR   = 15; // 3:15 PM IST
+export const BOT_TRADING_WINDOW_END_MIN    = 15;
+
+export const ATR14_TRADING_WINDOW_START_HOUR = 15; // 3:00 PM IST
+export const ATR14_TRADING_WINDOW_START_MIN  = 0;
+export const ATR14_TRADING_WINDOW_END_HOUR   = 15; // 3:15 PM IST
+export const ATR14_TRADING_WINDOW_END_MIN    = 15;
 
 export function isNSETradingHours(): boolean {
     const now = new Date();
@@ -29,10 +34,10 @@ export function isNSETradingHours(): boolean {
     if (day === 0 || day === 6) return false;
 
     const totalMins = ist.getHours() * 60 + ist.getMinutes();
-    const marketOpenMins  = 9 * 60 + 15;  // 9:15 AM IST
-    const marketCloseMins = 15 * 60 + 30; // 3:30 PM IST
+    const windowOpenMins  = BOT_TRADING_WINDOW_START_HOUR * 60 + BOT_TRADING_WINDOW_START_MIN; // 9:30 AM IST (570)
+    const windowCloseMins = BOT_TRADING_WINDOW_END_HOUR * 60 + BOT_TRADING_WINDOW_END_MIN;     // 3:15 PM IST (915)
 
-    return totalMins >= marketOpenMins && totalMins <= marketCloseMins;
+    return totalMins >= windowOpenMins && totalMins <= windowCloseMins;
 }
 
 export function is3pmTo315pmWindow(): boolean {
@@ -42,8 +47,8 @@ export function is3pmTo315pmWindow(): boolean {
     if (day === 0 || day === 6) return false;
 
     const totalMins = ist.getHours() * 60 + ist.getMinutes();
-    const startMins = TRADING_WINDOW_START_HOUR * 60 + TRADING_WINDOW_START_MIN;
-    const endMins   = TRADING_WINDOW_END_HOUR * 60 + TRADING_WINDOW_END_MIN;
+    const startMins = ATR14_TRADING_WINDOW_START_HOUR * 60 + ATR14_TRADING_WINDOW_START_MIN;
+    const endMins   = ATR14_TRADING_WINDOW_END_HOUR * 60 + ATR14_TRADING_WINDOW_END_MIN;
 
     return totalMins >= startMins && totalMins <= endMins;
 }
@@ -55,7 +60,7 @@ export function isNSEMarketOpen(): boolean {
 export function getMinutesToMarketClose(): number {
     const now = new Date();
     const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-    const closeMins = 15 * 60 + 30; // 3:30 PM cutoff
+    const closeMins = BOT_TRADING_WINDOW_END_HOUR * 60 + BOT_TRADING_WINDOW_END_MIN; // 3:15 PM cutoff
     const nowMins   = ist.getHours() * 60 + ist.getMinutes();
     return closeMins - nowMins;
 }

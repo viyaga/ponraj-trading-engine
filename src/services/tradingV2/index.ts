@@ -61,7 +61,7 @@ export class TradingV2 {
             `${tag} ║ Bot ID:          ${c.id}\n` +
             `${tag} ║ Index:           ${c.INDEX}\n` +
             `${tag} ║ Mode:            ${c.DRY_RUN ? '🧪 DRY RUN (Simulation Only)' : (env.isTesting ? '⚡ TEST MODE (Live Smallest Lot)' : '🚀 LIVE PRODUCTION')}\n` +
-            `${tag} ║ Market Open:     ${isNSEMarketOpen() ? '🟢 YES (Trading Hours)' : '🔴 NO (Closed)'}\n` +
+            `${tag} ║ Market Open:     ${isNSEMarketOpen() ? '🟢 YES (Trading Window: 9:30 AM - 3:15 PM IST)' : '🔴 NO (Outside Window)'}\n` +
             `${tag} ║ Order Config:    ${c.ORDER_TYPE} | ${c.PRODUCT} | Lots: ${c.NUMBER_OF_LOTS ?? 1} (LotSize: ${c.LOT_SIZE ?? 25})\n` +
             `${tag} ║ Premium Target:  ₹${c.OPTION_MIN_PREMIUM}–₹${c.OPTION_MAX_PREMIUM} (${c.EXPIRY_TYPE})\n` +
             `${tag} ║ Risk Limits:     Max Daily Loss: ₹${c.MAX_LOSS_PER_DAY ?? 2500} | Base TP: +${c.TARGET_PROFIT_PCT}% | Base SL: -${c.STOP_LOSS_PCT}%\n` +
@@ -72,10 +72,10 @@ export class TradingV2 {
             // ── 1. Market Hours Guard ─────────────────────────────────────
             if (!isNSEMarketOpen()) {
                 if (env.isTesting) {
-                    tradingCronLogger.info(`${tag} ⚠️ [IS_TESTING=true] Overriding NSE market hours guard — proceeding with cycle in test mode`);
+                    tradingCronLogger.info(`${tag} ⚠️ [IS_TESTING=true] Overriding bot trading hours guard — proceeding with cycle in test mode`);
                 } else {
                     skipTradingLogger.info(
-                        `${tag} ⏸️ SKIP: NSE market is currently CLOSED. Regular trading hours are Mon-Fri 09:15 to 15:30 IST. (Current IST: ${istTimeStr})`
+                        `${tag} ⏸️ SKIP: Outside allowed bot trading hours. Trading window is Mon-Fri 09:30 to 15:15 IST. (Current IST: ${istTimeStr})`
                     );
                     return;
                 }

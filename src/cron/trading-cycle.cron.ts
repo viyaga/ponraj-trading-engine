@@ -10,20 +10,20 @@ import { isNSETradingHours } from "../services/tradingV2/strategies/atr14-strate
 import { startCycleLogging, endCycleLogging } from "../utils/cycleLogger";
 
 /* ============================================================================
- * Cron Scheduler — NSE Market Hours Execution Window (Mon–Fri 9:15 AM - 3:30 PM IST)
+ * Cron Scheduler — Execution Window (Mon–Fri 9:30 AM - 3:15 PM IST)
  * ============================================================================ */
 
 const tradingCycleCronJob = (): void => {
 
-    // Default schedule: every 1 minute during market hours, Monday–Friday
+    // Default schedule: every 1 minute during trading hours, Monday–Friday
     cron.schedule(env.cronSchedule ?? "*/1 9-15 * * 1-5", async () => {
 
         // ── Market Hours Guard ──────────────────────────────────────────────
         if (!isNSETradingHours()) {
             if (env.isTesting) {
-                tradingCronLogger.info("[TradingCron] ⚠️ [IS_TESTING=true] Overriding NSE market hours guard — running cycle in testing mode");
+                tradingCronLogger.info("[TradingCron] ⚠️ [IS_TESTING=true] Overriding bot trading hours guard — running cycle in testing mode");
             } else {
-                tradingCronLogger.debug("[TradingCron] Outside NSE market trading hours — skipping cycle");
+                tradingCronLogger.debug("[TradingCron] Outside bot trading hours (9:30 AM - 3:15 PM IST) — skipping cycle");
                 return;
             }
         }
@@ -38,7 +38,7 @@ const tradingCycleCronJob = (): void => {
         const CONCURRENCY = 2;
 
         tradingCronLogger.info(`${"=".repeat(80)}`);
-        tradingCronLogger.info(`[TradingCron] ========== CYCLE START (3:00 PM - 3:15 PM${env.isTesting ? " | IS_TESTING" : ""}) ==========`);
+        tradingCronLogger.info(`[TradingCron] ========== CYCLE START (9:30 AM - 3:15 PM IST${env.isTesting ? " | IS_TESTING" : ""}) ==========`);
         tradingCronLogger.info(`${"=".repeat(80)}`);
 
         TradingV2.clearCaches();
