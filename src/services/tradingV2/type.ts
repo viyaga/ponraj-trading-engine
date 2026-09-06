@@ -51,6 +51,15 @@ export interface ConfigType {
     UT_BOT_END_HOUR?: number;       // default: 15 (3:15 PM IST)
     UT_BOT_END_MIN?: number;        // default: 15
     UT_BOT_SKIP_OPENING_CANDLE?: boolean; // default: true (skips 9:15-10:15 opening noise candle)
+    /**
+     * Trade entry timing:
+     *   true  (default) — Wait for the 1H candle to fully CLOSE before acting on a crossover.
+     *                     Matches TradingView alert "Once per bar close" behaviour. No repainting.
+     *   false           — Include the live (forming) 1H candle; trade IMMEDIATELY when the
+     *                     trailing stop is crossed mid-candle without waiting for close.
+     *                     Faster entry but susceptible to intra-candle whipsaws / repainting.
+     */
+    UT_BOT_TRADE_ON_CANDLE_CLOSE?: boolean; // default: true
 
     // Trailing SL
     IS_TRAILING_SL_ENABLED: boolean;

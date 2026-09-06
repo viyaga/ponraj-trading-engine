@@ -13,52 +13,53 @@ export class TradingConfig {
     /* ─── Default config values (Kite/NIFTY options) ───────────────────── */
     static readonly defaultConfig: Partial<ConfigType> = {
         // Instrument defaults
-        INDEX:               'NIFTY',
-        EXCHANGE:            'NFO',
-        LOT_SIZE:            75,     // 1 NIFTY lot = 75 units
-        NUMBER_OF_LOTS:      1,
-        EXPIRY_TYPE:         'weekly',
+        INDEX: 'NIFTY',
+        EXCHANGE: 'NFO',
+        LOT_SIZE: 75,     // 1 NIFTY lot = 75 units
+        NUMBER_OF_LOTS: 1,
+        EXPIRY_TYPE: 'weekly',
 
         // Timeframe
-        TIMEFRAME:           '15minute',
+        TIMEFRAME: '15minute',
 
         // ATR-14 strategy (3:00 PM - 3:15 PM)
-        ATR_PERIOD:           14,
-        TARGET_PROFIT_PCT:    10,    // legacy fallback
-        STOP_LOSS_PCT:        5,     // legacy fallback
-        MAX_LOSS_PER_DAY:     2500,  // ₹ max daily loss
+        ATR_PERIOD: 14,
+        TARGET_PROFIT_PCT: 10,    // legacy fallback
+        STOP_LOSS_PCT: 5,     // legacy fallback
+        MAX_LOSS_PER_DAY: 2500,  // ₹ max daily loss
 
         // Per-strategy TP / SL overrides
-        ATR_STRATEGY_TP_PCT:    10,  // ATR 15m: exit when premium +10%
-        ATR_STRATEGY_SL_PCT:    5,   // ATR 15m: exit when premium -5%
+        ATR_STRATEGY_TP_PCT: 10,  // ATR 15m: exit when premium +10%
+        ATR_STRATEGY_SL_PCT: 5,   // ATR 15m: exit when premium -5%
         UT_BOT_STRATEGY_TP_PCT: 20,  // UT Bot 1H: exit when premium +20%
         UT_BOT_STRATEGY_SL_PCT: 10,  // UT Bot 1H: exit when premium -10%
 
         // Option LTP Range Filter
-        OPTION_MIN_PREMIUM:   120,   // ₹ — only trade options priced ≥120
-        OPTION_MAX_PREMIUM:   150,   // ₹ — only trade options priced ≤150
+        OPTION_MIN_PREMIUM: 120,   // ₹ — only trade options priced ≥120
+        OPTION_MAX_PREMIUM: 150,   // ₹ — only trade options priced ≤150
 
         // UT Bot Alerts Strategy (1H candle - 1st Priority)
-        UT_BOT_ENABLED:       true,
-        UT_BOT_KEY_VALUE:     1.0,
-        UT_BOT_ATR_PERIOD:    10,
+        UT_BOT_ENABLED: true,
+        UT_BOT_KEY_VALUE: 1.0,
+        UT_BOT_ATR_PERIOD: 10,
         UT_BOT_USE_HEIKIN_ASHI: false,
-        UT_BOT_START_HOUR:    10,    // 10:15 AM IST (skips 9:15-10:15 opening noise)
-        UT_BOT_START_MIN:     15,
-        UT_BOT_END_HOUR:      15,    // 3:15 PM IST
-        UT_BOT_END_MIN:       15,
-        UT_BOT_SKIP_OPENING_CANDLE: true, // skip opening 9:15 candle false breakouts
+        UT_BOT_START_HOUR: 10,    // 10:15 AM IST (skips 9:15-10:15 opening noise)
+        UT_BOT_START_MIN: 15,
+        UT_BOT_END_HOUR: 15,    // 3:15 PM IST
+        UT_BOT_END_MIN: 15,
+        UT_BOT_SKIP_OPENING_CANDLE: true,        // skip opening 9:15 candle false breakouts
+        UT_BOT_TRADE_ON_CANDLE_CLOSE: false,      // true = wait for 1H close (safer); false = trade on live crossover mid-candle
 
         // Trailing SL
         IS_TRAILING_SL_ENABLED: true,
 
         // Order settings
-        ORDER_TYPE:  'MARKET',
-        PRODUCT:     'MIS',          // MIS = intraday (auto-squared at 3:30 PM)
+        ORDER_TYPE: 'MARKET',
+        PRODUCT: 'MIS',          // MIS = intraday (auto-squared at 3:30 PM)
 
         // Risk filters
-        MAX_CONCURRENT_TRADES:    1,
-        DAILY_LOSS_LIMIT:         10, // % of capital
+        MAX_CONCURRENT_TRADES: 1,
+        DAILY_LOSS_LIMIT: 10, // % of capital
         IS_WEEKEND_SAFETY_ENABLED: true,
 
         // Safety

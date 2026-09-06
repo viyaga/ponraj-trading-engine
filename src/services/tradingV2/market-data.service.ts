@@ -91,6 +91,8 @@ export class MarketDataService {
     /**
      * Fetch 1-hour (60-minute) candles for the index instrument.
      * Prefers Angel One SmartAPI if configured, falling back to Zerodha Kite.
+     *
+     * Returns only COMPLETED candles (timestamp < current 1H boundary).
      */
     static async get1hCandles(
         kite:  KiteExchange,
@@ -140,6 +142,42 @@ export class MarketDataService {
         return fetchPromise;
     }
 
+    /**
+     * Fetch 1-hour candles INCLUDING the current live (forming) candle.
+     *
+     * Used when UT_BOT_TRADE_ON_CANDLE_CLOSE = false.
+     * The live candle is appended with a synthetic close = current spot price,
+     * so the UT Bot can detect a mid-candle trailing-stop crossover immediately.
+     * This is NOT cached because the live candle changes every minute.
+     */
+    static async get1hCandlesWithLive(
+        kite:  KiteExchange,
+        index: string,
+        spotPrice: number
+    ): Promise<Candle[]> {
+        const completedCandles = await this.get1hCandles(kite, index);
+
+        const now        = Date.now();
+        const boundary1h = AngelMarketDataService.candleBoundary1h(now);
+
+        // Build a synthetic live candle: starts at boundary1h, uses spotPrice as close
+        const liveCandle: Candle = {
+            timestamp: boundary1h,
+            open:      spotPrice,
+            high:      spotPrice,
+            low:       spotPrice,
+            close:     spotPrice,
+            volume:    0,
+        };
+
+        tradingCronLogger.info(
+            `[MarketDataService] 🔴 LIVE CANDLE included (UT_BOT_TRADE_ON_CANDLE_CLOSE=false): ` +
+            `boundary=${new Date(boundary1h).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST | close=₹${spotPrice.toFixed(2)}`
+        );
+
+        return [...completedCandles, liveCandle];
+    }
+
     static async getSpotPrice(kite: KiteExchange, index: string): Promise<number> {
         const instrument = getIndexInstrument(index);
         if (this.priceCache.has(instrument)) {
@@ -187,18 +225,27 @@ export class MarketDataService {
     ): Promise<FetchedMarketData | null> {
         const tag = `[MarketData:${c.id}:${c.INDEX}]`;
         try {
-            logger.info(`${tag} ➔ Starting market data fetch (15m candles, 1h candles, spot price)...`);
+            const tradeOnClose = c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false; // default true
+
+            logger.info(
+                `${tag} ➤ Starting market data fetch (15m, 1h, spot) | ` +
+                `UT entry mode: ${tradeOnClose ? '⏳ CANDLE CLOSE' : '⚡ IMMEDIATE (live candle)'}`
+            );
             const startTime = Date.now();
 
-            // Fetch sequentially with rate-limit delays instead of firing simultaneously via Promise.all
+            // Fetch 15m candles and spot price first
             const candles15m = await this.get15mCandles(kite, c.INDEX);
-            const candles1h  = await this.get1hCandles(kite, c.INDEX);
             const spotPrice  = await this.getSpotPrice(kite, c.INDEX);
+
+            // For the 1H series: completed candles only (CANDLE_CLOSE) or include the live forming candle (IMMEDIATE)
+            const candles1h = tradeOnClose
+                ? await this.get1hCandles(kite, c.INDEX)
+                : await this.get1hCandlesWithLive(kite, c.INDEX, spotPrice);
 
             const elapsed = Date.now() - startTime;
             logger.info(
-                `${tag} ✔ Market data fetched successfully in ${elapsed}ms: ` +
-                `15m candles: ${candles15m.length}, 1h candles: ${candles1h.length}, Spot: ₹${spotPrice.toFixed(2)}`
+                `${tag} ✔ Market data fetched in ${elapsed}ms: ` +
+                `15m=${candles15m.length} candles, 1h=${candles1h.length} candles (${tradeOnClose ? 'closed' : 'live+closed'}), Spot=₹${spotPrice.toFixed(2)}`
             );
 
             if (!candles15m.length && !candles1h.length) {

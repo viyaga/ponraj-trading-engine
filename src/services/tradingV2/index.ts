@@ -65,6 +65,7 @@ export class TradingV2 {
         const tag     = `[TradingCycle:${c.id}:${c.INDEX}]`;
         const istTimeStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true });
 
+        const utBotEntryMode = (c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false) ? '⏳ CANDLE CLOSE (wait for 1H bar to complete)' : '⚡ IMMEDIATE (live candle / mid-candle crossover)';
         tradingCronLogger.info(
             `\n${tag} ╔══════════════════════════════════════════════════════════════════════════\n` +
             `${tag} ║ TRADING CYCLE START: ${cycleId}\n` +
@@ -76,6 +77,8 @@ export class TradingV2 {
             `${tag} ║ Order Config:    ${c.ORDER_TYPE} | ${c.PRODUCT} | Lots: ${c.NUMBER_OF_LOTS ?? 1} (LotSize: ${c.LOT_SIZE ?? 25})\n` +
             `${tag} ║ Premium Target:  ₹${c.OPTION_MIN_PREMIUM}–₹${c.OPTION_MAX_PREMIUM} (${c.EXPIRY_TYPE})\n` +
             `${tag} ║ Risk Limits:     Max Daily Loss: ₹${c.MAX_LOSS_PER_DAY ?? 2500} | Base TP: +${c.TARGET_PROFIT_PCT}% | Base SL: -${c.STOP_LOSS_PCT}%\n` +
+            `${tag} ║ UT Bot Entry:    ${utBotEntryMode}\n` +
+            `${tag} ║ UT Bot Window:   ${String(c.UT_BOT_START_HOUR ?? 10).padStart(2,'0')}:${String(c.UT_BOT_START_MIN ?? 15).padStart(2,'0')} – ${String(c.UT_BOT_END_HOUR ?? 15).padStart(2,'0')}:${String(c.UT_BOT_END_MIN ?? 15).padStart(2,'0')} IST | Skip Opening: ${c.UT_BOT_SKIP_OPENING_CANDLE ?? true}\n` +
             `${tag} ╚══════════════════════════════════════════════════════════════════════════`
         );
 
@@ -175,9 +178,20 @@ export class TradingV2 {
                     );
                     skipReasons.push(`Outside UT Bot trading window (${windowStr})`);
                 } else {
+                    const tradeOnClose = c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false;
+                    const lastUtCandle  = candles1h[candles1h.length - 1];
+                    const lastUtCandleTime = lastUtCandle
+                        ? new Date(lastUtCandle.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
+                        : 'N/A';
+
                     tradingCronLogger.info(
-                        `${tag} [UTBot 1H] Evaluating signal (key=${c.UT_BOT_KEY_VALUE ?? 1.0}, atrPeriod=${c.UT_BOT_ATR_PERIOD ?? 10}, HeikinAshi=${c.UT_BOT_USE_HEIKIN_ASHI ?? false})...`
+                        `${tag} [UTBot 1H] ─────────────────────────────────────────────\n` +
+                        `${tag} [UTBot 1H] Entry Mode:   ${tradeOnClose ? '⏳ CANDLE CLOSE' : '⚡ IMMEDIATE (live candle)'}\n` +
+                        `${tag} [UTBot 1H] Candles fed:  ${candles1h.length} (last bar: ${lastUtCandleTime} IST | ` +
+                        `${tradeOnClose ? 'CLOSED bar — no repainting' : '🔴 LIVE bar — close = spot ₹' + spotPrice.toFixed(2)})\n` +
+                        `${tag} [UTBot 1H] Params:       key=${c.UT_BOT_KEY_VALUE ?? 1.0}, atrPeriod=${c.UT_BOT_ATR_PERIOD ?? 10}, HeikinAshi=${c.UT_BOT_USE_HEIKIN_ASHI ?? false}`
                     );
+
                     const utResult = UTBotStrategy.evaluateSignal(
                         candles1h,
                         spotPrice,
@@ -188,11 +202,14 @@ export class TradingV2 {
                         }
                     );
 
+                    const signalCandleStr = utResult.signalCandleTimestamp
+                        ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + ' IST'
+                        : 'N/A';
                     tradingCronLogger.info(
                         `${tag} [UTBot 1H] Result → Signal: ${utResult.signal} | Option: ${utResult.optionType ?? 'NONE'} | ` +
                         `Score: ${utResult.score} | ATR: ${utResult.atr.toFixed(1)} | ` +
                         `TrailingStop: ₹${utResult.trailingStop.toFixed(1)} | ` +
-                        `CandleTimestamp: ${utResult.signalCandleTimestamp ? new Date(utResult.signalCandleTimestamp).toISOString() : 'N/A'} | ` +
+                        `SignalCandle: ${signalCandleStr} | ` +
                         `Reasons: [${utResult.reasons.join('; ') || 'None'}]` +
                         (utResult.skipReasons.length ? ` | Skip: [${utResult.skipReasons.join('; ')}]` : '')
                     );
@@ -204,7 +221,19 @@ export class TradingV2 {
                             skipReasons.push(skipMsg);
                             tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] ${skipMsg}`);
                         } else {
-                            // Prevent duplicate trade executions for the same 1H candle signal
+                            // Prevent duplicate trade executions for the same 1H candle signal.
+                            // In IMMEDIATE mode the signalCandleTimestamp is the START of the live (forming) 1H bar
+                            // (e.g. 12:00 IST for the 12:00-13:00 candle). Each cron tick within that hour will
+                            // see the same timestamp → only the FIRST crossover tick executes; subsequent ticks skip.
+                            const tradeOnCloseNow = c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false;
+                            const candleTsStr = utResult.signalCandleTimestamp
+                                ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + ' IST'
+                                : 'none';
+                            tradingCronLogger.info(
+                                `${tag} [UTBot 1H] 🔍 Duplicate-trade check → SignalCandle: ${candleTsStr} | ` +
+                                `Mode: ${tradeOnCloseNow ? 'CANDLE_CLOSE (fires once per completed bar)' : 'IMMEDIATE (fires once per live bar; subsequent ticks will be blocked)'}`
+                            );
+
                             const alreadyTraded = utResult.signalCandleTimestamp ? await TradeState.exists({
                                 tradingBotId: c.id,
                                 signalCandleTimestamp: utResult.signalCandleTimestamp,
@@ -216,7 +245,7 @@ export class TradingV2 {
                                     : 'unknown';
                                 const skipMsg = `UT Bot (1H): Signal on candle [${candleTimeStr} IST] was already executed for bot ${c.id}`;
                                 skipReasons.push(skipMsg);
-                                tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] Candle [${candleTimeStr} IST] already traded — skipping duplicate execution`);
+                                tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] Candle [${candleTimeStr} IST] already traded — skipping duplicate (${tradeOnCloseNow ? 'CANDLE_CLOSE' : 'IMMEDIATE'} mode)`);
                             } else {
                                 chosenSignal = utResult.signal;
                                 chosenOptionType = utResult.optionType;
