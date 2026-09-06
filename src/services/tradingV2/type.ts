@@ -46,6 +46,11 @@ export interface ConfigType {
     UT_BOT_KEY_VALUE?: number;      // default: 1.0
     UT_BOT_ATR_PERIOD?: number;     // default: 10
     UT_BOT_USE_HEIKIN_ASHI?: boolean;// default: false
+    UT_BOT_START_HOUR?: number;     // default: 10 (10:15 AM IST)
+    UT_BOT_START_MIN?: number;      // default: 15
+    UT_BOT_END_HOUR?: number;       // default: 15 (3:15 PM IST)
+    UT_BOT_END_MIN?: number;        // default: 15
+    UT_BOT_SKIP_OPENING_CANDLE?: boolean; // default: true (skips 9:15-10:15 opening noise candle)
 
     // Trailing SL
     IS_TRAILING_SL_ENABLED: boolean;

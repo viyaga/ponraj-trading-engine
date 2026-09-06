@@ -21,7 +21,18 @@ import {
 } from './type';
 import { KiteExchange, NIFTY_STEP, BANKNIFTY_STEP } from './kite-exchange';
 import { MarketDataService } from './market-data.service';
-import { ATR14Strategy, getMinutesToMarketClose, isNSEMarketOpen, is3pmTo315pmWindow } from './strategies/atr14-strategy';
+import {
+    ATR14Strategy,
+    getMinutesToMarketClose,
+    isNSEMarketOpen,
+    is3pmTo315pmWindow,
+    isUTBotTradingWindow,
+    isOpening915Candle,
+    UT_BOT_TRADING_WINDOW_START_HOUR,
+    UT_BOT_TRADING_WINDOW_START_MIN,
+    UT_BOT_TRADING_WINDOW_END_HOUR,
+    UT_BOT_TRADING_WINDOW_END_MIN,
+} from './strategies/atr14-strategy';
 import { UTBotStrategy } from './strategies/ut-bot-strategy';
 import { OptionSelectorService } from './option-selector.service';
 import { Data } from './data';
@@ -153,53 +164,72 @@ export class TradingV2 {
             // ── 4A. PRIORITY 1: UT Bot Strategy (1-Hour Timeframe) ────────
             const isUtBotEnabled = c.UT_BOT_ENABLED ?? true;
             if (isUtBotEnabled) {
-                tradingCronLogger.info(
-                    `${tag} [UTBot 1H] Evaluating signal (key=${c.UT_BOT_KEY_VALUE ?? 1.0}, atrPeriod=${c.UT_BOT_ATR_PERIOD ?? 10}, HeikinAshi=${c.UT_BOT_USE_HEIKIN_ASHI ?? false})...`
-                );
-                const utResult = UTBotStrategy.evaluateSignal(
-                    candles1h,
-                    spotPrice,
-                    {
-                        keyValue: c.UT_BOT_KEY_VALUE ?? 1.0,
-                        atrPeriod: c.UT_BOT_ATR_PERIOD ?? 10,
-                        useHeikinAshi: c.UT_BOT_USE_HEIKIN_ASHI ?? false,
+                if (!isUTBotTradingWindow(c) && !env.isTesting) {
+                    const startH = c.UT_BOT_START_HOUR ?? UT_BOT_TRADING_WINDOW_START_HOUR;
+                    const startM = c.UT_BOT_START_MIN  ?? UT_BOT_TRADING_WINDOW_START_MIN;
+                    const endH   = c.UT_BOT_END_HOUR   ?? UT_BOT_TRADING_WINDOW_END_HOUR;
+                    const endM   = c.UT_BOT_END_MIN    ?? UT_BOT_TRADING_WINDOW_END_MIN;
+                    const windowStr = `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')} - ${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')} IST`;
+                    tradingCronLogger.info(
+                        `${tag} [UTBot 1H] ⏸️ Outside UT Bot trading window (${windowStr}) — skipping (9:15-10:15 AM opening noise protection)`
+                    );
+                    skipReasons.push(`Outside UT Bot trading window (${windowStr})`);
+                } else {
+                    tradingCronLogger.info(
+                        `${tag} [UTBot 1H] Evaluating signal (key=${c.UT_BOT_KEY_VALUE ?? 1.0}, atrPeriod=${c.UT_BOT_ATR_PERIOD ?? 10}, HeikinAshi=${c.UT_BOT_USE_HEIKIN_ASHI ?? false})...`
+                    );
+                    const utResult = UTBotStrategy.evaluateSignal(
+                        candles1h,
+                        spotPrice,
+                        {
+                            keyValue: c.UT_BOT_KEY_VALUE ?? 1.0,
+                            atrPeriod: c.UT_BOT_ATR_PERIOD ?? 10,
+                            useHeikinAshi: c.UT_BOT_USE_HEIKIN_ASHI ?? false,
+                        }
+                    );
+
+                    tradingCronLogger.info(
+                        `${tag} [UTBot 1H] Result → Signal: ${utResult.signal} | Option: ${utResult.optionType ?? 'NONE'} | ` +
+                        `Score: ${utResult.score} | ATR: ${utResult.atr.toFixed(1)} | ` +
+                        `TrailingStop: ₹${utResult.trailingStop.toFixed(1)} | ` +
+                        `CandleTimestamp: ${utResult.signalCandleTimestamp ? new Date(utResult.signalCandleTimestamp).toISOString() : 'N/A'} | ` +
+                        `Reasons: [${utResult.reasons.join('; ') || 'None'}]` +
+                        (utResult.skipReasons.length ? ` | Skip: [${utResult.skipReasons.join('; ')}]` : '')
+                    );
+
+                    if (utResult.signal !== 'NONE') {
+                        const skipOpening = c.UT_BOT_SKIP_OPENING_CANDLE ?? true;
+                        if (skipOpening && utResult.signalCandleTimestamp && isOpening915Candle(utResult.signalCandleTimestamp)) {
+                            const skipMsg = `UT Bot (1H): Signal on 09:15 opening candle skipped (9:15-10:15 AM opening noise protection)`;
+                            skipReasons.push(skipMsg);
+                            tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] ${skipMsg}`);
+                        } else {
+                            // Prevent duplicate trade executions for the same 1H candle signal
+                            const alreadyTraded = utResult.signalCandleTimestamp ? await TradeState.exists({
+                                tradingBotId: c.id,
+                                signalCandleTimestamp: utResult.signalCandleTimestamp,
+                            }) : null;
+
+                            if (alreadyTraded) {
+                                const candleTimeStr = utResult.signalCandleTimestamp
+                                    ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
+                                    : 'unknown';
+                                const skipMsg = `UT Bot (1H): Signal on candle [${candleTimeStr} IST] was already executed for bot ${c.id}`;
+                                skipReasons.push(skipMsg);
+                                tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] Candle [${candleTimeStr} IST] already traded — skipping duplicate execution`);
+                            } else {
+                                chosenSignal = utResult.signal;
+                                chosenOptionType = utResult.optionType;
+                                chosenATR = utResult.atr;
+                                chosenScore = utResult.score;
+                                chosenSignalCandleTimestamp = utResult.signalCandleTimestamp ?? null;
+                                strategyName = 'UT_BOT_1H';
+                                reasons = utResult.reasons;
+                            }
+                        }
+                    } else if (utResult.skipReasons.length) {
+                        skipReasons.push(...utResult.skipReasons);
                     }
-                );
-
-                tradingCronLogger.info(
-                    `${tag} [UTBot 1H] Result → Signal: ${utResult.signal} | Option: ${utResult.optionType ?? 'NONE'} | ` +
-                    `Score: ${utResult.score} | ATR: ${utResult.atr.toFixed(1)} | ` +
-                    `TrailingStop: ₹${utResult.trailingStop.toFixed(1)} | ` +
-                    `CandleTimestamp: ${utResult.signalCandleTimestamp ? new Date(utResult.signalCandleTimestamp).toISOString() : 'N/A'} | ` +
-                    `Reasons: [${utResult.reasons.join('; ') || 'None'}]` +
-                    (utResult.skipReasons.length ? ` | Skip: [${utResult.skipReasons.join('; ')}]` : '')
-                );
-
-                if (utResult.signal !== 'NONE') {
-                    // Prevent duplicate trade executions for the same 1H candle signal
-                    const alreadyTraded = utResult.signalCandleTimestamp ? await TradeState.exists({
-                        tradingBotId: c.id,
-                        signalCandleTimestamp: utResult.signalCandleTimestamp,
-                    }) : null;
-
-                    if (alreadyTraded) {
-                        const candleTimeStr = utResult.signalCandleTimestamp
-                            ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
-                            : 'unknown';
-                        const skipMsg = `UT Bot (1H): Signal on candle [${candleTimeStr} IST] was already executed for bot ${c.id}`;
-                        skipReasons.push(skipMsg);
-                        tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] Candle [${candleTimeStr} IST] already traded — skipping duplicate execution`);
-                    } else {
-                        chosenSignal = utResult.signal;
-                        chosenOptionType = utResult.optionType;
-                        chosenATR = utResult.atr;
-                        chosenScore = utResult.score;
-                        chosenSignalCandleTimestamp = utResult.signalCandleTimestamp ?? null;
-                        strategyName = 'UT_BOT_1H';
-                        reasons = utResult.reasons;
-                    }
-                } else if (utResult.skipReasons.length) {
-                    skipReasons.push(...utResult.skipReasons);
                 }
             } else {
                 tradingCronLogger.info(`${tag} [UTBot 1H] Disabled in bot configuration`);

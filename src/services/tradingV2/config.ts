@@ -43,6 +43,11 @@ export class TradingConfig {
         UT_BOT_KEY_VALUE:     1.0,
         UT_BOT_ATR_PERIOD:    10,
         UT_BOT_USE_HEIKIN_ASHI: false,
+        UT_BOT_START_HOUR:    10,    // 10:15 AM IST (skips 9:15-10:15 opening noise)
+        UT_BOT_START_MIN:     15,
+        UT_BOT_END_HOUR:      15,    // 3:15 PM IST
+        UT_BOT_END_MIN:       15,
+        UT_BOT_SKIP_OPENING_CANDLE: true, // skip opening 9:15 candle false breakouts
 
         // Trailing SL
         IS_TRAILING_SL_ENABLED: true,

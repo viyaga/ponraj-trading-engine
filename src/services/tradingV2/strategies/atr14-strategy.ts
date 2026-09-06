@@ -12,20 +12,50 @@
 //          TR >= ATR14 AND Current Price < 3:00 candle Open AND Current Price < Previous Close
 // =============================================================================
 
-import { Candle, TargetCandle, ATRSignalResult, TradingSignal, OptionType } from '../type';
+import { Candle, TargetCandle, ATRSignalResult, TradingSignal, OptionType, ConfigType } from '../type';
 import { tradingCronLogger, skipTradingLogger } from '../logger';
 
-// ─── 3:00 PM - 3:15 PM Trading Window (IST) ──────────────────────────────────
-
+// ── Overall Engine / Bot Trading Window (9:30 AM – 3:15 PM IST) ──
 export const BOT_TRADING_WINDOW_START_HOUR = 9;  // 9:30 AM IST
 export const BOT_TRADING_WINDOW_START_MIN  = 30;
 export const BOT_TRADING_WINDOW_END_HOUR   = 15; // 3:15 PM IST
 export const BOT_TRADING_WINDOW_END_MIN    = 15;
 
+// ── UT Bot Strategy Trading Window (10:15 AM – 3:15 PM IST) ──
+// Avoids 9:15 AM - 10:15 AM opening volatility / gap false breakout window
+export const UT_BOT_TRADING_WINDOW_START_HOUR = 10; // 10:15 AM IST
+export const UT_BOT_TRADING_WINDOW_START_MIN  = 15;
+export const UT_BOT_TRADING_WINDOW_END_HOUR   = 15; // 3:15 PM IST
+export const UT_BOT_TRADING_WINDOW_END_MIN    = 15;
+
+// ── ATR-14 Strategy Specific Sub-Window (3:00 PM – 3:15 PM IST) ──
 export const ATR14_TRADING_WINDOW_START_HOUR = 15; // 3:00 PM IST
 export const ATR14_TRADING_WINDOW_START_MIN  = 0;
 export const ATR14_TRADING_WINDOW_END_HOUR   = 15; // 3:15 PM IST
 export const ATR14_TRADING_WINDOW_END_MIN    = 15;
+
+export function isUTBotTradingWindow(c?: ConfigType): boolean {
+    const now = new Date();
+    const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const day = ist.getDay(); // 0=Sun, 6=Sat
+    if (day === 0 || day === 6) return false;
+
+    const totalMins = ist.getHours() * 60 + ist.getMinutes();
+    const startHour = c?.UT_BOT_START_HOUR ?? UT_BOT_TRADING_WINDOW_START_HOUR;
+    const startMin  = c?.UT_BOT_START_MIN  ?? UT_BOT_TRADING_WINDOW_START_MIN;
+    const endHour   = c?.UT_BOT_END_HOUR   ?? UT_BOT_TRADING_WINDOW_END_HOUR;
+    const endMin    = c?.UT_BOT_END_MIN    ?? UT_BOT_TRADING_WINDOW_END_MIN;
+
+    const startMins = startHour * 60 + startMin;
+    const endMins   = endHour * 60 + endMin;
+
+    return totalMins >= startMins && totalMins <= endMins;
+}
+
+export function isOpening915Candle(timestamp: number): boolean {
+    const ist = new Date(new Date(timestamp).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    return ist.getHours() === 9 && ist.getMinutes() === 15;
+}
 
 export function isNSETradingHours(): boolean {
     const now = new Date();
