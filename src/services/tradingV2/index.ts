@@ -196,9 +196,10 @@ export class TradingV2 {
                         candles1h,
                         spotPrice,
                         {
-                            keyValue: c.UT_BOT_KEY_VALUE ?? 1.0,
-                            atrPeriod: c.UT_BOT_ATR_PERIOD ?? 10,
+                            keyValue:     c.UT_BOT_KEY_VALUE ?? 1.0,
+                            atrPeriod:    c.UT_BOT_ATR_PERIOD ?? 10,
                             useHeikinAshi: c.UT_BOT_USE_HEIKIN_ASHI ?? false,
+                            isLiveCandle: !tradeOnClose, // true when last candle is the synthetic live bar
                         }
                     );
 

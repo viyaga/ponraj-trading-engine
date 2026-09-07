@@ -28,9 +28,15 @@
 import { Candle, UTBotSignalResult } from '../type';
 
 export interface UTBotConfig {
-    keyValue: number;       // default: 1.0 (sensitivity factor 'a')
-    atrPeriod: number;      // default: 10 ('c')
-    useHeikinAshi?: boolean;// default: false ('h')
+    keyValue: number;         // default: 1.0 (sensitivity factor 'a')
+    atrPeriod: number;        // default: 10 ('c')
+    useHeikinAshi?: boolean;  // default: false ('h')
+    /**
+     * Set to true when the LAST candle in the series is a live (forming) candle
+     * (i.e. UT_BOT_TRADE_ON_CANDLE_CLOSE = false).
+     * Affects only diagnostic message text — the crossover detection logic is identical in both modes.
+     */
+    isLiveCandle?: boolean;   // default: false
 }
 
 export class UTBotStrategy {
@@ -191,12 +197,17 @@ export class UTBotStrategy {
     }
 
     /**
-     * Evaluate 1H UT Bot Signal on completed 1-hour candles
+     * Evaluate 1H UT Bot Signal on completed or live 1-hour candles.
+     *
+     * When config.isLiveCandle = true the last element of candles1h is a synthetic
+     * live candle (close = current spot price) appended by get1hCandlesWithLive().
+     * The crossover detection logic is identical in both modes; isLiveCandle only
+     * affects the human-readable diagnostic messages.
      */
     static evaluateSignal(
         candles1h: Candle[],
         spotPrice: number,
-        config: UTBotConfig = { keyValue: 1.0, atrPeriod: 10, useHeikinAshi: false }
+        config: UTBotConfig = { keyValue: 1.0, atrPeriod: 10, useHeikinAshi: false, isLiveCandle: false }
     ): UTBotSignalResult {
         const result: UTBotSignalResult = {
             signal: 'NONE',
@@ -208,9 +219,11 @@ export class UTBotStrategy {
             skipReasons: [],
         };
 
+        const candleLabel = config.isLiveCandle ? 'live 1H candle (IMMEDIATE mode)' : 'completed 1H candle';
+
         if (!candles1h || candles1h.length < config.atrPeriod + 2) {
             result.skipReasons.push(
-                `Insufficient completed 1H candles (${candles1h?.length ?? 0}/${config.atrPeriod + 2})`
+                `Insufficient 1H candles for UT Bot (${candles1h?.length ?? 0}/${config.atrPeriod + 2}) [${candleLabel}]`
             );
             return result;
         }
@@ -242,7 +255,7 @@ export class UTBotStrategy {
             result.optionType = 'CE';
             result.score = 100;
             result.reasons.push(
-                `UT Bot BUY Signal (1H): Candle [${candleTimeStr} IST] Close (${signalCandle.close.toFixed(2)}) > Trailing Stop (${currentStop.toFixed(2)}) ` +
+                `UT Bot BUY Signal (1H) [${candleLabel}]: Candle [${candleTimeStr} IST] Close (${signalCandle.close.toFixed(2)}) > Trailing Stop (${currentStop.toFixed(2)}) ` +
                 `with bullish crossover (Spot: ₹${spotPrice.toFixed(2)}, ATR: ${currentATR.toFixed(2)}, Key: ${config.keyValue})`
             );
         } else if (isSell) {
@@ -250,12 +263,12 @@ export class UTBotStrategy {
             result.optionType = 'PE';
             result.score = 100;
             result.reasons.push(
-                `UT Bot SELL Signal (1H): Candle [${candleTimeStr} IST] Close (${signalCandle.close.toFixed(2)}) < Trailing Stop (${currentStop.toFixed(2)}) ` +
+                `UT Bot SELL Signal (1H) [${candleLabel}]: Candle [${candleTimeStr} IST] Close (${signalCandle.close.toFixed(2)}) < Trailing Stop (${currentStop.toFixed(2)}) ` +
                 `with bearish crossover (Spot: ₹${spotPrice.toFixed(2)}, ATR: ${currentATR.toFixed(2)}, Key: ${config.keyValue})`
             );
         } else {
             result.skipReasons.push(
-                `UT Bot (1H): No fresh crossover on completed 1H candle [${candleTimeStr} IST Close: ${signalCandle.close.toFixed(2)}]. ` +
+                `UT Bot (1H): No fresh crossover on ${candleLabel} [${candleTimeStr} IST Close: ${signalCandle.close.toFixed(2)}${config.isLiveCandle ? ` = spot ₹${spotPrice.toFixed(2)}` : ''}]. ` +
                 `Current pos: ${currentPos === 1 ? 'LONG' : currentPos === -1 ? 'SHORT' : 'FLAT'}, TrailingStop: ₹${currentStop.toFixed(2)}`
             );
         }
