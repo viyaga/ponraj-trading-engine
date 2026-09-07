@@ -269,31 +269,49 @@ export class TradingV2 {
                 if (env.isTesting && !is3pmTo315pmWindow()) {
                     tradingCronLogger.info(`${tag} ⚠️ [IS_TESTING=true] Overriding 3:00 PM - 3:15 PM window for ATR14 evaluation`);
                 }
-                tradingCronLogger.info(`${tag} [ATR14 15m] Evaluating 15m signal (ATR Period: ${c.ATR_PERIOD ?? 14})...`);
-                const atrResult = ATR14Strategy.evaluateSignal(
-                    candles15m,
-                    spotPrice,
-                    undefined,
-                    c.ATR_PERIOD
-                );
 
-                tradingCronLogger.info(
-                    `${tag} [ATR14 15m] Result → Signal: ${atrResult.signal} | Option: ${atrResult.optionType ?? 'NONE'} | ` +
-                    `Score: ${atrResult.score} | ATR14: ${atrResult.atr14.toFixed(1)} | ` +
-                    `TR: ${atrResult.tr.toFixed(1)} | ` +
-                    `Reasons: [${atrResult.reasons.join('; ') || 'None'}]` +
-                    (atrResult.skipReasons.length ? ` | Skip: [${atrResult.skipReasons.join('; ')}]` : '')
-                );
+                // ── DATA AVAILABILITY GUARD ──
+                // Distinguish "can't calculate" from "no setup found".
+                // ATR(14) needs at least 15 completed 15m candles.
+                // When candles15m=0 it means the market data pipeline failed (Angel One + Zerodha both returned nothing),
+                // NOT that there is no trading signal.
+                const atrPeriod = c.ATR_PERIOD ?? 14;
+                if (candles15m.length < atrPeriod + 1) {
+                    const dataSkipMsg =
+                        `ATR14 NOT EVALUATED — MARKET_DATA_UNAVAILABLE: ` +
+                        `only ${candles15m.length} completed 15m candles available (need ${atrPeriod + 1}). ` +
+                        `Angel One 15m fetch likely returned 0 candles (weekend/pre-open edge case or API error) ` +
+                        `and Zerodha historical API fallback may require a subscription upgrade. ` +
+                        `This is a DATA PIPELINE failure, not a strategy signal.`;
+                    tradingCycleErrorLogger.error(`${tag} [ATR14 15m] ⚠️ ${dataSkipMsg}`);
+                    skipReasons.push(dataSkipMsg);
+                } else {
+                    tradingCronLogger.info(`${tag} [ATR14 15m] Evaluating 15m signal (${candles15m.length} candles, ATR Period: ${atrPeriod})...`);
+                    const atrResult = ATR14Strategy.evaluateSignal(
+                        candles15m,
+                        spotPrice,
+                        undefined,
+                        atrPeriod
+                    );
 
-                if (atrResult.signal !== 'NONE') {
-                    chosenSignal = atrResult.signal;
-                    chosenOptionType = atrResult.optionType;
-                    chosenATR = atrResult.atr14;
-                    chosenScore = atrResult.score;
-                    strategyName = 'ATR14_15M';
-                    reasons = atrResult.reasons;
-                } else if (atrResult.skipReasons.length) {
-                    skipReasons.push(...atrResult.skipReasons);
+                    tradingCronLogger.info(
+                        `${tag} [ATR14 15m] Result → Signal: ${atrResult.signal} | Option: ${atrResult.optionType ?? 'NONE'} | ` +
+                        `Score: ${atrResult.score} | ATR14: ${atrResult.atr14.toFixed(1)} | ` +
+                        `TR: ${atrResult.tr.toFixed(1)} | ` +
+                        `Reasons: [${atrResult.reasons.join('; ') || 'None'}]` +
+                        (atrResult.skipReasons.length ? ` | Skip: [${atrResult.skipReasons.join('; ')}]` : '')
+                    );
+
+                    if (atrResult.signal !== 'NONE') {
+                        chosenSignal = atrResult.signal;
+                        chosenOptionType = atrResult.optionType;
+                        chosenATR = atrResult.atr14;
+                        chosenScore = atrResult.score;
+                        strategyName = 'ATR14_15M';
+                        reasons = atrResult.reasons;
+                    } else if (atrResult.skipReasons.length) {
+                        skipReasons.push(...atrResult.skipReasons);
+                    }
                 }
             }
 

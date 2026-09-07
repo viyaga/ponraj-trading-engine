@@ -29,8 +29,14 @@ export class AngelMarketDataService {
     private static readonly FIFTEEN_MIN_MS = 15 * 60 * 1000;
     private static readonly ONE_HOUR_MS    = 60 * 60 * 1000;
 
-    // Bootstrap lookback: how many calendar days to fetch on the very first load
-    private static readonly BOOTSTRAP_DAYS_15M =  2;  // ~50 candles, need 15
+    // Bootstrap lookback: how many calendar days to fetch on the very first load.
+    //
+    // BOOTSTRAP_DAYS_15M must be >= 7 (not 2!) to handle the Monday-morning edge case:
+    //   On Monday at 07:00 IST, now - 2 days = Saturday 07:00 IST.
+    //   NSE is closed Saturday + Sunday, so there are ZERO candles in a 2-day window.
+    //   Friday's last candle (15:15 IST) is ~63 hours behind — outside the 2-day window.
+    //   7 days guarantees the full previous trading week is always covered.
+    private static readonly BOOTSTRAP_DAYS_15M =  7;  // 7 calendar days → always covers prior full trading week
     private static readonly BOOTSTRAP_DAYS_1H  = 30;  // ~180 candles, ensures Wilder's RMA full stabilization matching TradingView
 
     // Incremental lookback: how many candle periods to re-fetch when a new candle forms

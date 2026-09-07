@@ -79,11 +79,32 @@ export class MarketDataService {
             const to   = new Date(now);
 
             tradingCronLogger.info(`[MarketDataService] ➔ Fetching 15m candles from Zerodha Kite: ${instrument} (${from.toISOString()} to ${to.toISOString()})`);
-            const candles = await kite.getCandlestickData(instrument, '15minute', from, to);
-            // Strip forming candle AND prior-day candles from Zerodha data too
-            const filtered = candles.filter(c => c.timestamp < currentCandleStart && c.timestamp >= todayOpen);
-            tradingCronLogger.info(`[MarketDataService] ✔ Received ${candles.length} raw 15m candles from Zerodha (${filtered.length} today-completed candles)`);
-            return filtered;
+            try {
+                const candles = await kite.getCandlestickData(instrument, '15minute', from, to);
+                // Strip forming candle AND prior-day candles from Zerodha data too
+                const filtered = candles.filter(c => c.timestamp < currentCandleStart && c.timestamp >= todayOpen);
+                tradingCronLogger.info(`[MarketDataService] ✔ Received ${candles.length} raw 15m candles from Zerodha (${filtered.length} today-completed candles)`);
+                return filtered;
+            } catch (zerodhaErr: any) {
+                const isPermissionError =
+                    zerodhaErr?.error_type === 'PermissionException' ||
+                    zerodhaErr?.message?.toLowerCase().includes('permission') ||
+                    zerodhaErr?.message?.toLowerCase().includes('insufficient permission');
+
+                if (isPermissionError) {
+                    tradingCycleErrorLogger.error(
+                        `[MarketDataService] ❌ Zerodha 15m historical data BLOCKED (PermissionException). ` +
+                        `This is a SUBSCRIPTION issue, NOT a credentials/token issue. ` +
+                        `Historical candle data requires the Kite Connect plan with historical data access enabled. ` +
+                        `See: https://kite.trade/docs/connect/v3/historical/ | Error: ${zerodhaErr.message}`
+                    );
+                } else {
+                    tradingCycleErrorLogger.error(
+                        `[MarketDataService] ❌ Zerodha 15m candle fetch failed: ${zerodhaErr.message}`, { error: zerodhaErr }
+                    );
+                }
+                return [];
+            }
         })();
 
         fetchPromise.catch((err) => {
