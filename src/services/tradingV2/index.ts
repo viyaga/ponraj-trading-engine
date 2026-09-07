@@ -249,17 +249,53 @@ export class TradingV2 {
                         (utResult.skipReasons.length ? ` | Skip: [${utResult.skipReasons.join('; ')}]` : '')
                     );
 
+                    // ── IS_TESTING FORCE-SIGNAL OVERRIDE ──────────────────────────────────
+                    // In test mode, if the strategy returned NONE (no fresh crossover),
+                    // we force a signal from the current trailing-stop position direction.
+                    // This lets us verify the full order-placement pipeline without waiting
+                    // for a live crossover to happen during market hours.
+                    if (env.isTesting && utResult.signal === 'NONE') {
+                        const posLabel = utResult.currentPos === 1 ? 'LONG' : utResult.currentPos === -1 ? 'SHORT' : 'FLAT';
+                        if (utResult.currentPos === 1 || utResult.currentPos === -1) {
+                            const forcedSignal: TradingSignal = utResult.currentPos === 1 ? 'BULL' : 'BEAR';
+                            const forcedOption: OptionType    = utResult.currentPos === 1 ? 'CE' : 'PE';
+                            tradingCronLogger.warn(
+                                `${tag} ⚠️⚠️⚠️ [IS_TESTING OVERRIDE] UT Bot returned NONE (no fresh crossover).\\n` +
+                                `${tag} ⚠️ Trailing stop position = ${posLabel} → FORCING ${forcedSignal}/${forcedOption} signal.\\n` +
+                                `${tag} ⚠️ Close: ₹${spotPrice.toFixed(2)} | TrailingStop: ₹${utResult.trailingStop.toFixed(2)} | ATR: ${utResult.atr.toFixed(2)}\\n` +
+                                `${tag} ⚠️ THIS SIGNAL IS SYNTHETIC — NOT a real market crossover.\\n` +
+                                `${tag} ⚠️ DISABLED IN PRODUCTION (IS_TESTING=false).`
+                            );
+                            // Mutate utResult fields so the rest of the normal flow handles it identically
+                            utResult.signal     = forcedSignal;
+                            utResult.optionType = forcedOption;
+                            utResult.score      = 50; // intentionally lower than a real crossover (100)
+                            utResult.reasons    = [
+                                `[IS_TESTING FORCED] UT Bot trailing stop pos=${posLabel} (no fresh crossover). ` +
+                                `Close=₹${spotPrice.toFixed(2)} vs Stop=₹${utResult.trailingStop.toFixed(2)}, ATR=${utResult.atr.toFixed(2)}`
+                            ];
+                            utResult.skipReasons = [];
+                        } else {
+                            tradingCronLogger.warn(
+                                `${tag} ⚠️ [IS_TESTING OVERRIDE] UT Bot returned NONE and trailing stop pos=FLAT — ` +
+                                `cannot determine direction. Signal stays NONE.`
+                            );
+                        }
+                    }
+
                     if (utResult.signal !== 'NONE') {
-                        const skipOpening = c.UT_BOT_SKIP_OPENING_CANDLE ?? true;
+                        // ── Opening candle guard ──
+                        const skipOpening = (c.UT_BOT_SKIP_OPENING_CANDLE ?? true) && !env.isTesting;
                         if (skipOpening && utResult.signalCandleTimestamp && isOpening915Candle(utResult.signalCandleTimestamp)) {
                             const skipMsg = `UT Bot (1H): Signal on 09:15 opening candle skipped (9:15-10:15 AM opening noise protection)`;
                             skipReasons.push(skipMsg);
                             tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] ${skipMsg}`);
                         } else {
-                            // Prevent duplicate trade executions for the same 1H candle signal.
-                            // In IMMEDIATE mode the signalCandleTimestamp is the START of the live (forming) 1H bar
-                            // (e.g. 12:00 IST for the 12:00-13:00 candle). Each cron tick within that hour will
-                            // see the same timestamp → only the FIRST crossover tick executes; subsequent ticks skip.
+                            if (env.isTesting && (c.UT_BOT_SKIP_OPENING_CANDLE ?? true) && utResult.signalCandleTimestamp && isOpening915Candle(utResult.signalCandleTimestamp)) {
+                                tradingCronLogger.warn(`${tag} ⚠️ [IS_TESTING OVERRIDE] Opening candle 09:15 noise guard BYPASSED — signal on opening candle will proceed.`);
+                            }
+
+                            // ── Duplicate-trade guard ──
                             const tradeOnCloseNow = c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false;
                             const candleTsStr = utResult.signalCandleTimestamp
                                 ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + ' IST'
@@ -274,7 +310,7 @@ export class TradingV2 {
                                 signalCandleTimestamp: utResult.signalCandleTimestamp,
                             }) : null;
 
-                            if (alreadyTraded) {
+                            if (alreadyTraded && !env.isTesting) {
                                 const candleTimeStr = utResult.signalCandleTimestamp
                                     ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
                                     : 'unknown';
@@ -282,6 +318,16 @@ export class TradingV2 {
                                 skipReasons.push(skipMsg);
                                 tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] Candle [${candleTimeStr} IST] already traded — skipping duplicate (${tradeOnCloseNow ? 'CANDLE_CLOSE' : 'IMMEDIATE'} mode)`);
                             } else {
+                                if (alreadyTraded && env.isTesting) {
+                                    const candleTimeStr = utResult.signalCandleTimestamp
+                                        ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
+                                        : 'unknown';
+                                    tradingCronLogger.warn(
+                                        `${tag} ⚠️ [IS_TESTING OVERRIDE] Duplicate-trade guard BYPASSED — candle [${candleTimeStr} IST] was already traded, ` +
+                                        `but IS_TESTING=true forces re-execution to test the full order pipeline. ` +
+                                        `THIS WILL PLACE A SECOND REAL ORDER ON ZERODHA.`
+                                    );
+                                }
                                 chosenSignal = utResult.signal;
                                 chosenOptionType = utResult.optionType;
                                 chosenATR = utResult.atr;
@@ -294,6 +340,7 @@ export class TradingV2 {
                     } else if (utResult.skipReasons.length) {
                         skipReasons.push(...utResult.skipReasons);
                     }
+
                 }
             } else {
                 tradingCronLogger.info(`${tag} [UTBot 1H] Disabled in bot configuration`);

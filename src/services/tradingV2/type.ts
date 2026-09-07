@@ -285,6 +285,14 @@ export interface UTBotSignalResult {
     reasons: string[];
     skipReasons: string[];
     signalCandleTimestamp?: number; // Epoch ms of the completed 1H candle that produced this signal
+    /**
+     * Current trailing-stop position at the signal candle:
+     *   1  = LONG  (price crossed ABOVE trailing stop — bullish trend)
+     *  -1  = SHORT (price crossed BELOW trailing stop — bearish trend)
+     *   0  = FLAT  (no trend established yet)
+     * Used by IS_TESTING override to force a directional trade even without a fresh crossover.
+     */
+    currentPos: number;
 }
 
 /* ───────────────────────────────────────

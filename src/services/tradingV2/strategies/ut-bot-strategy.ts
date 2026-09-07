@@ -217,6 +217,7 @@ export class UTBotStrategy {
             score: 0,
             reasons: [],
             skipReasons: [],
+            currentPos: 0,
         };
 
         const candleLabel = config.isLiveCandle ? 'live 1H candle (IMMEDIATE mode)' : 'completed 1H candle';
@@ -241,6 +242,7 @@ export class UTBotStrategy {
 
         result.atr = currentATR;
         result.trailingStop = currentStop;
+        result.currentPos = currentPos;
         result.signalCandleTimestamp = signalCandle.timestamp;
 
         const candleTimeStr = new Date(signalCandle.timestamp).toLocaleTimeString('en-IN', {
