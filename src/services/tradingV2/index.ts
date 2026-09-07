@@ -141,16 +141,26 @@ export class TradingV2 {
 
             const { candles15m, candles1h, spotPrice } = marketData;
             const last15m = candles15m[candles15m.length - 1];
+            const first15m = candles15m[0];
             const last1h  = candles1h[candles1h.length - 1];
+            const first1h = candles1h[0];
             const formatBar = (b: Candle) =>
                 `[${new Date(b.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })}] ` +
                 `O: ₹${b.open.toFixed(1)} | H: ₹${b.high.toFixed(1)} | L: ₹${b.low.toFixed(1)} | C: ₹${b.close.toFixed(1)} (Vol: ${b.volume})`;
+            const fmtTs = (ts: number) => new Date(ts).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
             tradingCronLogger.info(
                 `${tag} 📊 Market Snapshot (${c.INDEX}):\n` +
-                `  Spot LTP:       ₹${spotPrice.toFixed(2)}\n` +
-                (last15m ? `  Latest 15m Bar: ${formatBar(last15m)}\n` : '') +
-                (last1h  ? `  Latest 1h Bar:  ${formatBar(last1h)}` : '')
+                `  Spot LTP:        ₹${spotPrice.toFixed(2)}\n` +
+                `  ── 15m Candles ──────────────────────────────────────\n` +
+                `  Count:           ${candles15m.length} completed bars\n` +
+                (first15m ? `  First Bar:       ${fmtTs(first15m.timestamp)} IST | C: ₹${first15m.close.toFixed(2)}\n` : `  First Bar:       N/A\n`) +
+                (last15m  ? `  Latest Bar:      ${formatBar(last15m)}\n` : `  Latest Bar:      ⚠️ NO 15m CANDLES — ATR14 strategy disabled\n`) +
+                `  ── 1H Candles ───────────────────────────────────────\n` +
+                `  Count:           ${candles1h.length} bars (${(c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false) ? 'completed only' : 'completed + live'})\n` +
+                (first1h ? `  First Bar:       ${fmtTs(first1h.timestamp)} IST | C: ₹${first1h.close.toFixed(2)}\n` : `  First Bar:       N/A\n`) +
+                (last1h  ? `  Latest Bar:      ${formatBar(last1h)}\n` : `  Latest Bar:      ⚠️ NO 1H CANDLES — UT Bot disabled\n`) +
+                `  ─────────────────────────────────────────────────────`
             );
 
             // ── 4. Signal Evaluation: Multi-Strategy Priority Orchestration ──
@@ -196,12 +206,36 @@ export class TradingV2 {
                         candles1h,
                         spotPrice,
                         {
-                            keyValue:     c.UT_BOT_KEY_VALUE ?? 1.0,
-                            atrPeriod:    c.UT_BOT_ATR_PERIOD ?? 10,
+                            keyValue:      c.UT_BOT_KEY_VALUE ?? 1.0,
+                            atrPeriod:     c.UT_BOT_ATR_PERIOD ?? 10,
                             useHeikinAshi: c.UT_BOT_USE_HEIKIN_ASHI ?? false,
-                            isLiveCandle: !tradeOnClose, // true when last candle is the synthetic live bar
+                            isLiveCandle:  !tradeOnClose, // true when last candle is the synthetic live bar
                         }
                     );
+
+                    // ── Deep debug: show trailing stop state around signal candle ──
+                    if (candles1h.length >= 3) {
+                        const sorted1h = [...candles1h].sort((a, b) => a.timestamp - b.timestamp);
+                        const calc = UTBotStrategy.calculateUTBotSeries(sorted1h, {
+                            keyValue:      c.UT_BOT_KEY_VALUE ?? 1.0,
+                            atrPeriod:     c.UT_BOT_ATR_PERIOD ?? 10,
+                            useHeikinAshi: c.UT_BOT_USE_HEIKIN_ASHI ?? false,
+                        });
+                        const n = sorted1h.length;
+                        const fmtBar = (i: number) => {
+                            const bar = sorted1h[i];
+                            const ts = new Date(bar.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+                            return `[${ts}] C:${bar.close.toFixed(1)} Stop:${calc.trailingStopSeries[i].toFixed(1)} ATR:${calc.atrSeries[i].toFixed(1)} ` +
+                                   `Pos:${calc.posSeries[i]===1?'LONG':calc.posSeries[i]===-1?'SHORT':'FLAT'} ` +
+                                   `Buy:${calc.buySignals[i]} Sell:${calc.sellSignals[i]}`;
+                        };
+                        tradingCronLogger.info(
+                            `${tag} [UTBot 1H] 🔬 Trailing Stop State (last 3 bars):\n` +
+                            `  n-2: ${n >= 3 ? fmtBar(n - 3) : 'N/A'}\n` +
+                            `  n-1: ${n >= 2 ? fmtBar(n - 2) : 'N/A'}\n` +
+                            `  n-0: ${n >= 1 ? fmtBar(n - 1) : 'N/A'} ← signal candle`
+                        );
+                    }
 
                     const signalCandleStr = utResult.signalCandleTimestamp
                         ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) + ' IST'
@@ -288,6 +322,28 @@ export class TradingV2 {
                     skipReasons.push(dataSkipMsg);
                 } else {
                     tradingCronLogger.info(`${tag} [ATR14 15m] Evaluating 15m signal (${candles15m.length} candles, ATR Period: ${atrPeriod})...`);
+
+                    // ── Deep debug: show last 3 candles and their TR values ──
+                    if (candles15m.length >= 2) {
+                        const sorted15 = [...candles15m].sort((a, b) => a.timestamp - b.timestamp);
+                        const showN = Math.min(3, sorted15.length - 1);
+                        const trLines = [];
+                        for (let di = showN; di >= 1; di--) {
+                            const ci = sorted15.length - di;
+                            const bar = sorted15[ci];
+                            const prev = sorted15[ci - 1];
+                            const hl = bar.high - bar.low;
+                            const hpc = Math.abs(bar.high - prev.close);
+                            const lpc = Math.abs(bar.low - prev.close);
+                            const tr = Math.max(hl, hpc, lpc);
+                            const ts = new Date(bar.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+                            trLines.push(`    [${ts}] C:${bar.close.toFixed(1)} TR:${tr.toFixed(1)} (HL:${hl.toFixed(1)} HpC:${hpc.toFixed(1)} LpC:${lpc.toFixed(1)})`);
+                        }
+                        tradingCronLogger.info(
+                            `${tag} [ATR14 15m] 🔬 Last ${showN} candle TRs:\n${trLines.join('\n')}`
+                        );
+                    }
+
                     const atrResult = ATR14Strategy.evaluateSignal(
                         candles15m,
                         spotPrice,
@@ -643,7 +699,13 @@ export class TradingV2 {
             throw err;
         } finally {
             const durationMs = Date.now() - cycleStartTime;
-            tradingCronLogger.info(`${tag} 🏁 ========== END TRADING CYCLE (${durationMs}ms) ==========\n`);
+            const durationStr = durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(2)}s`;
+            tradingCronLogger.info(
+                `${tag} 🏁 ╔══════════════════════════════════════════════════════╗\n` +
+                `${tag} 🏁 ║  END TRADING CYCLE (${durationStr.padEnd(10)})                    ║\n` +
+                `${tag} 🏁 ║  Cycle ID: ${cycleId.padEnd(30)}        ║\n` +
+                `${tag} 🏁 ╚══════════════════════════════════════════════════════╝\n`
+            );
         }
     }
 
@@ -859,15 +921,20 @@ export class TradingV2 {
 
         const pnlPct = ATR14Strategy.calculatePnLPct(actualEntryPrice, currentPrice);
         const unrealizedPnlInr = (currentPrice - actualEntryPrice) * (state.quantity ?? 1);
+        const distToTP  = targetPrice - currentPrice;
+        const distToSL  = currentPrice - stopPrice;
+        const gttStatus = state.stopLossOrderId ? `GTT #${state.stopLossOrderId}` : '⚠️ SOFTWARE-MONITORED (no GTT)';
 
         tradingCronLogger.info(
             `${tag} 📊 Open Position Health Check:\n` +
             `  Symbol:          ${state.symbol} (${state.quantity} units)\n` +
-            `  Entry Price:     ₹${actualEntryPrice.toFixed(2)}\n` +
+            `  Entry Price:     ₹${actualEntryPrice.toFixed(2)} (OrderId: ${state.entryOrderId})\n` +
             `  Current LTP:     ₹${currentPrice.toFixed(2)}\n` +
             `  Unrealized P&L:  ₹${unrealizedPnlInr.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)\n` +
-            `  Target Profit:   +${effectiveTP}% → exit above ₹${targetPrice.toFixed(2)}\n` +
-            `  Stop Loss:       -${effectiveSL}% → exit below ₹${stopPrice.toFixed(2)}`
+            `  Target Profit:   +${effectiveTP}% → ₹${targetPrice.toFixed(2)} (${distToTP >= 0 ? '↑' : '↓'} ${Math.abs(distToTP).toFixed(2)} pts away)\n` +
+            `  Stop Loss:       -${effectiveSL}% → ₹${stopPrice.toFixed(2)} (${distToSL >= 0 ? '↑' : '↓'} ${Math.abs(distToSL).toFixed(2)} pts above SL)\n` +
+            `  GTT Status:      ${gttStatus}\n` +
+            `  Trailing SL:     ${c.IS_TRAILING_SL_ENABLED ? '✅ Enabled' : '❌ Disabled'}`
         );
 
         // Update trailing SL if enabled
