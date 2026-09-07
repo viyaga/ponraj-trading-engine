@@ -54,13 +54,18 @@ export class MarketDataService {
 
         const fetchPromise = (async () => {
             const now  = Date.now();
-            const currentCandleStart = Math.floor(now / FIFTEEN_MIN_MS) * FIFTEEN_MIN_MS;
+            // Use IST-anchored 15m boundary (matches NSE's 09:15 grid) — same as AngelMarketDataService
+            const currentCandleStart = AngelMarketDataService.candleBoundary15m(now);
+            // Candles from before today's 09:15 AM IST are from the previous trading session
+            const todayOpen = AngelMarketDataService.todayMarketOpenMs(now);
 
             // 1. Try Angel One SmartAPI (Free)
             try {
                 const angelCandles = await AngelMarketDataService.get15mCandles(index);
                 if (angelCandles && angelCandles.length > 0) {
-                    const filtered = angelCandles.filter(c => c.timestamp < currentCandleStart);
+                    // AngelMarketDataService already filters to today-completed, but re-apply
+                    // the guard here in case the cache was primed before this fix was deployed.
+                    const filtered = angelCandles.filter(c => c.timestamp < currentCandleStart && c.timestamp >= todayOpen);
                     tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One 15m candles: ${filtered.length} completed candles for ${index}`);
                     return filtered;
                 }
@@ -75,8 +80,9 @@ export class MarketDataService {
 
             tradingCronLogger.info(`[MarketDataService] ➔ Fetching 15m candles from Zerodha Kite: ${instrument} (${from.toISOString()} to ${to.toISOString()})`);
             const candles = await kite.getCandlestickData(instrument, '15minute', from, to);
-            const filtered = candles.filter(c => c.timestamp < currentCandleStart);
-            tradingCronLogger.info(`[MarketDataService] ✔ Received ${candles.length} raw 15m candles from Zerodha (${filtered.length} completed candles)`);
+            // Strip forming candle AND prior-day candles from Zerodha data too
+            const filtered = candles.filter(c => c.timestamp < currentCandleStart && c.timestamp >= todayOpen);
+            tradingCronLogger.info(`[MarketDataService] ✔ Received ${candles.length} raw 15m candles from Zerodha (${filtered.length} today-completed candles)`);
             return filtered;
         })();
 

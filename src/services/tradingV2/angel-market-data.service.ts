@@ -66,10 +66,45 @@ export class AngelMarketDataService {
 
     /**
      * Returns the start timestamp (ms) of the candle period that contains `nowMs`.
-     * e.g. for 15m candles at 14:47 IST → returns timestamp of the 14:45 candle.
+     * Generic UTC-floor — used only internally where IST alignment isn't required.
      */
     private static candleBoundary(nowMs: number, periodMs: number): number {
         return Math.floor(nowMs / periodMs) * periodMs;
+    }
+
+    /**
+     * Returns the start timestamp (ms) of the 15-minute candle period in IST that contains `nowMs`.
+     * NSE 15-minute candles are anchored to 09:15 IST (e.g. 09:15, 09:30, 09:45…).
+     * A plain UTC floor (Math.floor(now / 900000) × 900000) does NOT match NSE's grid
+     * because 09:15 IST = 03:45 UTC, which is not a multiple of 15 minutes from UTC midnight.
+     *
+     * Strategy: shift to IST, floor to 15-minute UTC boundaries, shift back.
+     * This produces boundaries that match NSE candle open timestamps exactly.
+     */
+    public static candleBoundary15m(nowMs: number): number {
+        const IST_OFFSET_MS  = 19800000; // 5h30m in ms
+        const FIFTEEN_MIN_MS = 900000;   // 15 * 60 * 1000
+
+        // Shift to IST, floor to the nearest 15-minute multiple (UTC-agnostic),
+        // then shift back to UTC epoch ms.
+        const istMs = nowMs + IST_OFFSET_MS;
+        const flooredIst = Math.floor(istMs / FIFTEEN_MIN_MS) * FIFTEEN_MIN_MS;
+        return flooredIst - IST_OFFSET_MS;
+    }
+
+    /**
+     * Returns the epoch ms of today's 09:15 AM IST (NSE market open).
+     * Used to strip out candles from the previous trading day when the engine
+     * runs before or at market open.
+     */
+    public static todayMarketOpenMs(nowMs: number): number {
+        const IST_OFFSET_MS  = 19800000; // 5h30m
+        const istNow = new Date(nowMs + IST_OFFSET_MS);
+        // Midnight of today in IST as UTC epoch ms
+        const istMidnight =
+            Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate()) - IST_OFFSET_MS;
+        // 09:15 AM IST = 09*3600000 + 15*60000 = 33300000 ms after IST midnight
+        return istMidnight + 33300000;
     }
 
     /**
@@ -303,7 +338,10 @@ export class AngelMarketDataService {
         const symbolToken = ANGEL_TOKENS[indexName.toUpperCase().replace('NSE:', '')] || '99926000';
         const cacheKey    = `${symbolToken}:15minute`;
         const nowMs       = Date.now();
-        const boundary    = this.candleBoundary(nowMs, this.FIFTEEN_MIN_MS);
+        // Use IST-anchored boundary so it aligns with NSE's 09:15-grid candle timestamps
+        const boundary    = this.candleBoundary15m(nowMs);
+        // Candles from before today's 09:15 AM IST are from the previous trading session
+        const todayOpen   = this.todayMarketOpenMs(nowMs);
 
         const cached = this.candleCache.get(cacheKey);
 
@@ -381,18 +419,28 @@ export class AngelMarketDataService {
 
                 if (json?.status === true && Array.isArray(json?.data)) {
                     const incoming = this.parseCandles(json.data);
-                    // Filter out the currently-forming candle (boundary = current period start)
-                    const completed = incoming.filter(c => c.timestamp < boundary);
+                    // Filter out: (1) the currently-forming candle (boundary = current IST-aligned period start)
+                    //             (2) candles from before today's 09:15 AM IST — these are prior-day leftovers
+                    //             that appear when the engine runs before market open (e.g. 06:49 AM in test mode)
+                    const completed = incoming.filter(c => c.timestamp < boundary && c.timestamp >= todayOpen);
 
+                    // If we are before market open, carry forward yesterday's completed candles from cache
+                    // so ATR-14 still has history to compute on. Today's filter just removes stale day-end candles
+                    // that would misrepresent the "latest bar" as 15:15 from yesterday.
                     const merged = isColdStart
                         ? completed
-                        : this.mergeCandles(cached!.candles, completed);
+                        : this.mergeCandles(
+                            cached!.candles.filter(c => c.timestamp >= todayOpen), // drop prior-day cache entries
+                            completed
+                          );
 
                     this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
 
                     tradingCronLogger.info(
                         `[AngelMarketDataService] ✔ 15m candles updated for ${indexName} (${duration}ms) | ` +
-                        `fetched: ${incoming.length} raw → ${completed.length} completed | ` +
+                        `fetched: ${incoming.length} raw → ${completed.length} today-completed | ` +
+                        `todayOpen: ${new Date(todayOpen).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST | ` +
+                        `boundary: ${new Date(boundary).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST | ` +
                         `cache total: ${merged.length} candles | ` +
                         `${isColdStart ? 'cold start' : `+${completed.length - (cached?.candles.filter(c => c.timestamp >= boundary - this.FIFTEEN_MIN_MS).length ?? 0)} new`}`
                     );
