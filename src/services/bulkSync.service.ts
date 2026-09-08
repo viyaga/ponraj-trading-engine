@@ -1,5 +1,5 @@
 import { SyncStatus } from '../models/syncStatus.model';
-import { TradeState } from '../models/tradeState.model';
+import { TradeState, tradeStateEvents } from '../models/tradeState.model';
 import { BotError } from '../models/botError.model';
 import { PayloadClient } from './payload.client';
 import { syncLogger } from './tradingV2/logger';
@@ -7,6 +7,21 @@ import errorLogger from '../utils/errorLogger';
 
 export class BulkSyncService {
     private static isSyncing = false;
+    private static isDirty = false;
+
+    /**
+     * Flag that trades or states have changed and need synchronization
+     */
+    public static markDirty(): void {
+        this.isDirty = true;
+    }
+
+    /**
+     * Check whether there are pending trade changes needing sync
+     */
+    public static hasPendingChanges(): boolean {
+        return this.isDirty;
+    }
 
     /**
      * Syncs latest PNL values for all active bots using DB-level aggregation streaming.
@@ -230,14 +245,21 @@ export class BulkSyncService {
 
     /**
      * Executes all sync tasks in parallel with concurrency locking.
+     * Skips execution if no changes are pending unless options.force is true.
      */
-    static async runFullSync() {
+    static async runFullSync(options: { force?: boolean } = {}) {
+        if (!options.force && !this.isDirty) {
+            syncLogger.debug('[BulkSync] No pending changes (isDirty=false) — skipping sync');
+            return;
+        }
+
         if (this.isSyncing) {
             syncLogger.warn('[BulkSync] Sync already in progress, skipping duplicate invocation...');
             return;
         }
 
         this.isSyncing = true;
+        this.isDirty = false; // Clear dirty flag at start of sync
         const startTime = Date.now();
         syncLogger.info('[BulkSync] ➔ Starting full sync with Backend (PNL, Trade States, Bot States)...');
 
@@ -252,10 +274,16 @@ export class BulkSyncService {
             const duration = ((Date.now() - startTime) / 1000).toFixed(2);
             syncLogger.info(`[BulkSync] ✔ Full Sync completed in ${duration}s: ${pnlCount} PNL, ${tradeCount} trades, ${stateCount} bot states`);
         } catch (err) {
+            this.isDirty = true; // Re-mark dirty on failure so next cycle retries
             errorLogger.error('[BulkSync] Critical Error during sync:', err);
             syncLogger.error('[BulkSync] ✖ Critical Error during backend sync:', { error: err });
         } finally {
             this.isSyncing = false;
         }
     }
-}
+}
+
+// ── Automatically mark sync dirty on any TradeState modification ─────────────
+tradeStateEvents.on('change', () => {
+    BulkSyncService.markDirty();
+});

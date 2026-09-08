@@ -6,6 +6,8 @@ import { Candle, TargetCandle, ConfigType } from './type';
 import { KiteExchange, NIFTY_INDEX, BANKNIFTY_INDEX } from './kite-exchange';
 import { tradingCycleErrorLogger, tradingCronLogger } from './logger';
 import { AngelMarketDataService } from './angel-market-data.service';
+import { AngelStreamService } from './angel-stream.service';
+import { LiveCandleBuilder } from './live-candle-builder';
 
 export interface FetchedMarketData {
     candles15m:   Candle[];
@@ -184,22 +186,16 @@ export class MarketDataService {
     ): Promise<Candle[]> {
         const completedCandles = await this.get1hCandles(kite, index);
 
-        const now        = Date.now();
-        const boundary1h = AngelMarketDataService.candleBoundary1h(now);
+        // Fetch completed 15m candles from cache to seed high/low if cold start
+        const completed15m = await this.get15mCandles(kite, index).catch(() => []);
 
-        // Build a synthetic live candle: starts at boundary1h, uses spotPrice as close
-        const liveCandle: Candle = {
-            timestamp: boundary1h,
-            open:      spotPrice,
-            high:      spotPrice,
-            low:       spotPrice,
-            close:     spotPrice,
-            volume:    0,
-        };
+        const token = (index === 'BANKNIFTY') ? '99926009' : '99926000';
+        const liveCandle = LiveCandleBuilder.getLive1hCandle(token, spotPrice, completed15m);
 
         tradingCronLogger.info(
-            `[MarketDataService] 🔴 LIVE CANDLE included (UT_BOT_TRADE_ON_CANDLE_CLOSE=false): ` +
-            `boundary=${new Date(boundary1h).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST | close=₹${spotPrice.toFixed(2)}`
+            `[MarketDataService] 🔴 LIVE CANDLE included (LiveCandleBuilder): ` +
+            `boundary=${new Date(liveCandle.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST | ` +
+            `O: ₹${liveCandle.open.toFixed(2)} | H: ₹${liveCandle.high.toFixed(2)} | L: ₹${liveCandle.low.toFixed(2)} | C: ₹${liveCandle.close.toFixed(2)}`
         );
 
         return [...completedCandles, liveCandle];
@@ -210,6 +206,15 @@ export class MarketDataService {
         if (this.priceCache.has(instrument)) {
             tradingCronLogger.debug(`[MarketDataService] Cache HIT for spot price (${instrument})`);
             return this.priceCache.get(instrument)!;
+        }
+
+        // 0. Check real-time WebSocket tick in memory (< 1ms zero-latency)
+        const streamToken = (index === 'BANKNIFTY' || index === 'NIFTY BANK') ? '99926009' : '99926000';
+        const streamLtp = AngelStreamService.getLtp(streamToken);
+        if (streamLtp && streamLtp > 0) {
+            tradingCronLogger.info(`[MarketDataService] ⚡ Instant spot LTP from AngelStream for ${index}: ₹${streamLtp.toFixed(2)}`);
+            this.priceCache.set(instrument, Promise.resolve(streamLtp));
+            return streamLtp;
         }
 
         const fetchPromise = (async () => {

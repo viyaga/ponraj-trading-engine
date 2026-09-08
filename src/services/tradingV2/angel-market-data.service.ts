@@ -13,6 +13,7 @@ const ANGEL_TOKENS: Record<string, string> = {
 
 export class AngelMarketDataService {
     private static jwtToken: string | null = null;
+    private static feedToken: string | null = null;
     private static tokenExpiry: number = 0;
     private static loginPromise: Promise<string | null> | null = null;
 
@@ -268,6 +269,7 @@ export class AngelMarketDataService {
 
             if (json?.status === true && json?.data?.jwtToken) {
                 this.jwtToken = json.data.jwtToken;
+                this.feedToken = json.data.feedToken || null;
                 // Token valid for 20 hours
                 this.tokenExpiry = Date.now() + 20 * 60 * 60 * 1000;
                 this.lastHistoricalApiCallTime = Date.now();
@@ -301,6 +303,30 @@ export class AngelMarketDataService {
         });
 
         return await this.loginPromise;
+    }
+
+    /**
+     * Get credentials needed for Angel One SmartStream WebSocket connection
+     */
+    static async getStreamCredentials(): Promise<{
+        jwtToken: string;
+        feedToken: string;
+        clientCode: string;
+        apiKey: string;
+    } | null> {
+        const apiKey = env.angelOneApiKey || process.env.ANGEL_ONE_API_KEY || '';
+        const clientCode = env.angelOneClientCode || process.env.ANGEL_ONE_CLIENT_CODE || '';
+        if (!apiKey || !clientCode) return null;
+
+        const jwt = await this.getValidJwtToken(apiKey);
+        if (!jwt) return null;
+
+        return {
+            jwtToken: jwt,
+            feedToken: this.feedToken || jwt,
+            clientCode,
+            apiKey,
+        };
     }
 
     /**

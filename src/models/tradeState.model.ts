@@ -108,6 +108,14 @@ const TradeStateSchema: Schema = new Schema(
 TradeStateSchema.index({ updatedAt: 1, tradingBotId: 1 });
 TradeStateSchema.index({ tradingBotId: 1, status: 1 });
 TradeStateSchema.index({ tradingBotId: 1, signalCandleTimestamp: 1 });
+TradeStateSchema.index({ status: 1, updatedAt: -1 });
+
+// Event emitter to notify listeners of changes without circular imports
+export const tradeStateEvents = new (require('events').EventEmitter)();
+
+TradeStateSchema.post('save', function () {
+    tradeStateEvents.emit('change');
+});
 
 // Export the model with generic type parameter
 export const TradeState = mongoose.model<ITradeState>(

@@ -7,6 +7,8 @@ import { TradingConfig } from '../services/tradingV2/config';
 import { TradingV2 } from '../services/tradingV2';
 import { ConfigType } from '../services/tradingV2/type';
 import { tradingCronLogger } from '../services/tradingV2/logger';
+import { refreshConfigsOnDemand } from '../cron/trading-cycle.cron';
+import { BulkSyncService } from '../services/bulkSync.service';
 
 const router: Router = Router();
 
@@ -61,6 +63,52 @@ router.post('/trigger-cycle', async (req: Request, res: Response) => {
             message: 'Trading cycle execution failed',
             timestamp,
             error: error instanceof Error ? error.message : String(error),
+        });
+    }
+});
+
+/**
+ * POST /api/trading/refresh-configs
+ *
+ * Forces an immediate cache invalidation and refresh of bot configurations
+ * from the backend Payload CMS, updating the in-memory trigger thresholds.
+ */
+router.post('/refresh-configs', async (req: Request, res: Response) => {
+    try {
+        const configs = await refreshConfigsOnDemand();
+        res.status(200).json({
+            success: true,
+            message: `Successfully refreshed ${configs.length} bot configuration(s)`,
+            count: configs.length,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (error: any) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to refresh bot configurations',
+            error: error.message,
+        });
+    }
+});
+
+/**
+ * POST /api/trading/sync
+ *
+ * Manually force a full bulk synchronization with the backend.
+ */
+router.post('/sync', async (req: Request, res: Response) => {
+    try {
+        await BulkSyncService.runFullSync({ force: true });
+        res.status(200).json({
+            success: true,
+            message: 'Full sync executed successfully',
+            timestamp: new Date().toISOString(),
+        });
+    } catch (error: any) {
+        res.status(500).json({
+            success: false,
+            message: 'Bulk sync failed',
+            error: error.message,
         });
     }
 });

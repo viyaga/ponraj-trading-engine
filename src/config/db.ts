@@ -5,8 +5,13 @@ import env from './env';
 
 const connectDB = async (): Promise<void> => {
     try {
-        await mongoose.connect(env.mongoUri);
-        tradingCronLogger.info('MongoDB connected successfully.');
+        await mongoose.connect(env.mongoUri, {
+            maxPoolSize: 20,              // Cap connection pool to prevent exhausting Atlas tier limits
+            minPoolSize: 5,               // Keep hot connections ready for immediate execution
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
+        });
+        tradingCronLogger.info('MongoDB connected successfully (Pool: min 5, max 20).');
     } catch (error) {
         errorLogger.error('MongoDB connection error:', error);
         tradingCronLogger.warn('Server will start without database connection. Database operations will fail.');
