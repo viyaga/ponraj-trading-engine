@@ -145,8 +145,8 @@ const tradingCycleCronJob = (): void => {
             return;
         }
 
-        // If stream is disconnected, attempt to reconnect
-        if (!isStreamConnected) {
+        // If stream is disconnected, attempt to reconnect (only if not already connecting)
+        if (!isStreamConnected && !stream.isConnectingNow()) {
             tradingCronLogger.warn('[TradingCron] ⚠️ AngelStreamService disconnected — attempting auto-reconnect and running fallback cycle...');
             stream.connect().catch(() => {});
         }

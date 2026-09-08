@@ -23,6 +23,7 @@ export class AngelStreamService {
     private reconnectAttempts: number = 0;
     private isManualClose: boolean = false;
     private isConnecting: boolean = false;
+    private lastRateLimitTime: number = 0;
 
     // In-memory cache of latest prices: token -> { ltp, timestamp }
     private static latestPrices = new Map<string, { ltp: number; timestamp: number }>();
@@ -31,11 +32,16 @@ export class AngelStreamService {
     private subscribedTokens = new Map<string, { exchangeType: number; token: string }>();
 
     private static readonly WS_URL = 'wss://smartapisocket.angelone.in/smart-stream';
-    private static readonly PING_INTERVAL_MS = 10000;      // Send 'ping' every 10s
-    private static readonly WATCHDOG_INTERVAL_MS = 25000;  // Reconnect if no message in 25s
+    private static readonly PING_INTERVAL_MS = 10000;          // Send 'ping' every 10s
+    private static readonly WATCHDOG_INTERVAL_MS = 60000;      // Reconnect if no message in 60s (safer for slow/pre-market ticks)
+    private static readonly RATE_LIMIT_COOLDOWN_MS = 45000;    // 45s cooldown on HTTP 429 rate limit
 
     private constructor() {
         this.emitter.setMaxListeners(50);
+        // Default error handler to prevent unhandled error event crash in Node.js
+        this.emitter.on('error', (err) => {
+            tradingCronLogger.warn(`[AngelStream] Handled stream error event: ${err?.message}`);
+        });
         // Default subscription: NIFTY 50 (token: 99926000, exchangeType: 1)
         this.subscribedTokens.set('99926000', { exchangeType: 1, token: '99926000' });
     }
@@ -64,10 +70,24 @@ export class AngelStreamService {
     }
 
     /**
+     * Check if connection attempt is currently in progress
+     */
+    public isConnectingNow(): boolean {
+        return this.isConnecting || Boolean(this.ws && this.ws.readyState === WebSocket.CONNECTING);
+    }
+
+    /**
      * Connect to Angel One SmartStream WebSocket
      */
     public async connect(): Promise<void> {
-        if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.OPEN)) {
+        if (this.isConnecting || (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING))) {
+            return;
+        }
+
+        const timeSinceRateLimit = Date.now() - this.lastRateLimitTime;
+        if (timeSinceRateLimit < AngelStreamService.RATE_LIMIT_COOLDOWN_MS) {
+            const remaining = Math.ceil((AngelStreamService.RATE_LIMIT_COOLDOWN_MS - timeSinceRateLimit) / 1000);
+            tradingCronLogger.warn(`[AngelStream] ⏳ In 429 rate-limit cooldown window (${remaining}s remaining) — skipping connect attempt.`);
             return;
         }
 
@@ -92,10 +112,11 @@ export class AngelStreamService {
                 'x-feed-token': creds.feedToken,
             };
 
-            await new Promise<void>((resolve, reject) => {
+            await new Promise<void>((resolve) => {
                 const connectTimeout = setTimeout(() => {
                     this.isConnecting = false;
-                    reject(new Error('[AngelStream] WebSocket connection timeout (10s)'));
+                    tradingCronLogger.warn('[AngelStream] ⚠️ WebSocket connection timed out after 10s.');
+                    resolve();
                 }, 10000);
 
                 this.ws = new WebSocket(AngelStreamService.WS_URL, { headers });
@@ -105,6 +126,7 @@ export class AngelStreamService {
                     tradingCronLogger.info('[AngelStream] ✔ Connected to Angel One SmartStream WebSocket.');
                     this.isConnecting = false;
                     this.reconnectAttempts = 0;
+                    this.lastRateLimitTime = 0;
                     this.lastMessageTime = Date.now();
 
                     this.startHeartbeat();
@@ -120,28 +142,40 @@ export class AngelStreamService {
 
                 this.ws.on('error', (err: Error) => {
                     clearTimeout(connectTimeout);
-                    tradingCronLogger.error(`[AngelStream] ✖ WebSocket error: ${err.message}`, { error: err });
-                    this.emitter.emit('error', err);
-                    if (this.isConnecting) {
-                        this.isConnecting = false;
-                        reject(err);
+                    const is429 = err.message?.includes('429');
+                    if (is429) {
+                        this.lastRateLimitTime = Date.now();
+                        tradingCronLogger.warn('[AngelStream] ⚠️ 429 Too Many Requests on WebSocket — entering 45s cooldown.');
+                    } else {
+                        tradingCronLogger.error(`[AngelStream] ✖ WebSocket error: ${err.message}`, { error: err });
                     }
+                    try {
+                        this.emitter.emit('error', err);
+                    } catch {}
+                    this.isConnecting = false;
+                    resolve(); // Resolve safely to prevent unhandled rejection crashes
                 });
 
                 this.ws.on('close', (code: number, reason: Buffer) => {
                     tradingCronLogger.warn(`[AngelStream] ⚠️ WebSocket closed (code: ${code}, reason: ${reason.toString() || 'none'})`);
                     this.cleanup();
-                    this.emitter.emit('close', code);
+                    try {
+                        this.emitter.emit('close', code);
+                    } catch {}
                     if (!this.isManualClose) {
-                        this.scheduleReconnect();
+                        this.scheduleReconnect(code === 1002 || code === 4429);
                     }
                 });
             });
 
         } catch (err: any) {
+            const is429 = err?.message?.includes('429');
+            if (is429) {
+                this.lastRateLimitTime = Date.now();
+            }
             tradingCronLogger.error(`[AngelStream] ✖ Connection failed: ${err.message}`, { error: err });
             this.isConnecting = false;
-            this.scheduleReconnect();
+            this.scheduleReconnect(is429);
         }
     }
 
@@ -266,17 +300,26 @@ export class AngelStreamService {
         this.ws = null;
     }
 
-    private scheduleReconnect(): void {
+    private scheduleReconnect(isRateLimited: boolean = false): void {
         if (this.isManualClose || this.reconnectTimer) return;
 
         this.reconnectAttempts++;
-        // Exponential backoff: min 3s, max 30s
-        const delayMs = Math.min(3000 * Math.pow(1.5, Math.min(this.reconnectAttempts, 6)), 30000);
-        tradingCronLogger.info(`[AngelStream] Reconnect scheduled in ${(delayMs / 1000).toFixed(1)}s (attempt #${this.reconnectAttempts})...`);
+        const isCurrentlyRateLimited = isRateLimited || (Date.now() - this.lastRateLimitTime < AngelStreamService.RATE_LIMIT_COOLDOWN_MS);
+        
+        let delayMs: number;
+        if (isCurrentlyRateLimited) {
+            const elapsed = Date.now() - this.lastRateLimitTime;
+            const remaining = Math.max(15000, AngelStreamService.RATE_LIMIT_COOLDOWN_MS - elapsed);
+            delayMs = remaining;
+        } else {
+            delayMs = Math.min(3000 * Math.pow(1.5, Math.min(this.reconnectAttempts, 5)), 30000);
+        }
+
+        tradingCronLogger.info(`[AngelStream] Reconnect scheduled in ${(delayMs / 1000).toFixed(1)}s (attempt #${this.reconnectAttempts}${isCurrentlyRateLimited ? ', rate-limited' : ''})...`);
 
         this.reconnectTimer = setTimeout(async () => {
             this.reconnectTimer = null;
-            await this.connect();
+            await this.connect().catch(() => {});
         }, delayMs);
     }
 
