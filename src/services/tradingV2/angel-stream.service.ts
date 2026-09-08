@@ -84,6 +84,12 @@ export class AngelStreamService {
             return;
         }
 
+        // Cancel any pending reconnect timer since we are connecting now
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+
         const timeSinceRateLimit = Date.now() - this.lastRateLimitTime;
         if (timeSinceRateLimit < AngelStreamService.RATE_LIMIT_COOLDOWN_MS) {
             const remaining = Math.ceil((AngelStreamService.RATE_LIMIT_COOLDOWN_MS - timeSinceRateLimit) / 1000);
@@ -112,6 +118,9 @@ export class AngelStreamService {
                 'x-feed-token': creds.feedToken,
             };
 
+            // Hard invariant: Guarantee max 1 active WebSocket. Terminate any previous socket immediately.
+            this.cleanup();
+
             await new Promise<void>((resolve) => {
                 const connectTimeout = setTimeout(() => {
                     this.isConnecting = false;
@@ -119,9 +128,10 @@ export class AngelStreamService {
                     resolve();
                 }, 10000);
 
-                this.ws = new WebSocket(AngelStreamService.WS_URL, { headers });
+                const socket = new WebSocket(AngelStreamService.WS_URL, { headers });
+                this.ws = socket;
 
-                this.ws.on('open', () => {
+                socket.on('open', () => {
                     clearTimeout(connectTimeout);
                     tradingCronLogger.info('[AngelStream] ✔ Connected to Angel One SmartStream WebSocket.');
                     this.isConnecting = false;
@@ -135,12 +145,12 @@ export class AngelStreamService {
                     resolve();
                 });
 
-                this.ws.on('message', (data: WebSocket.RawData) => {
+                socket.on('message', (data: WebSocket.RawData) => {
                     this.lastMessageTime = Date.now();
                     this.handleMessage(data);
                 });
 
-                this.ws.on('error', (err: Error) => {
+                socket.on('error', (err: Error) => {
                     clearTimeout(connectTimeout);
                     const is429 = err.message?.includes('429');
                     if (is429) {
@@ -156,7 +166,7 @@ export class AngelStreamService {
                     resolve(); // Resolve safely to prevent unhandled rejection crashes
                 });
 
-                this.ws.on('close', (code: number, reason: Buffer) => {
+                socket.on('close', (code: number, reason: Buffer) => {
                     tradingCronLogger.warn(`[AngelStream] ⚠️ WebSocket closed (code: ${code}, reason: ${reason.toString() || 'none'})`);
                     this.cleanup();
                     try {
@@ -275,10 +285,9 @@ export class AngelStreamService {
         this.watchdogTimer = setInterval(() => {
             const elapsed = Date.now() - this.lastMessageTime;
             if (elapsed > AngelStreamService.WATCHDOG_INTERVAL_MS) {
-                tradingCronLogger.warn(`[AngelStream] ⚠️ Watchdog timeout: no message in ${Math.round(elapsed / 1000)}s — reconnecting...`);
-                if (this.ws) {
-                    try { this.ws.terminate(); } catch {}
-                }
+                tradingCronLogger.warn(`[AngelStream] ⚠️ Watchdog timeout: no message in ${Math.round(elapsed / 1000)}s — terminating socket and reconnecting...`);
+                this.cleanup();
+                this.scheduleReconnect();
             }
         }, 5000);
     }
@@ -297,7 +306,18 @@ export class AngelStreamService {
     private cleanup(): void {
         this.stopHeartbeat();
         this.isConnecting = false;
-        this.ws = null;
+        if (this.ws) {
+            const socket = this.ws;
+            this.ws = null;
+            try {
+                socket.removeAllListeners();
+                if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+                    socket.terminate();
+                }
+            } catch (err: any) {
+                tradingCronLogger.warn(`[AngelStream] Error terminating previous socket: ${err?.message}`);
+            }
+        }
     }
 
     private scheduleReconnect(isRateLimited: boolean = false): void {
@@ -334,10 +354,6 @@ export class AngelStreamService {
             this.reconnectTimer = null;
         }
         this.cleanup();
-        if (this.ws) {
-            try { this.ws.close(); } catch {}
-            this.ws = null;
-        }
         tradingCronLogger.info('[AngelStream] Disconnected.');
     }
 }
