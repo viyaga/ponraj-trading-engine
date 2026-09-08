@@ -11,6 +11,9 @@ import errorLogger from './utils/errorLogger';
 
 import { AngelStreamService } from './services/tradingV2/angel-stream.service';
 
+let isShuttingDown = false;
+let serverInstance: any = null;
+
 const startServer = async (): Promise<void> => {
     // Connect to MongoDB
     await connectDB();
@@ -25,19 +28,32 @@ const startServer = async (): Promise<void> => {
     startCronJobs();
 
     // Start the Express server
-    app.listen(env.port, () => {
+    serverInstance = app.listen(env.port, () => {
         tradingCronLogger.info(`Server running on port ${env.port}`);
         tradingCronLogger.info(`Access API at http://localhost:${env.port}`);
     });
 };
 
 // Graceful shutdown
-const handleShutdown = () => {
-    tradingCronLogger.info('[Server] Shutting down, disconnecting AngelStream...');
-    AngelStreamService.getInstance().disconnect();
+const handleShutdown = (signal: string) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    tradingCronLogger.info(`[Server] Received ${signal}. Shutting down gracefully...`);
+    try {
+        AngelStreamService.getInstance().disconnect();
+    } catch {}
+    if (serverInstance) {
+        try {
+            serverInstance.close();
+        } catch {}
+    }
+    setTimeout(() => {
+        tradingCronLogger.info('[Server] Process exited cleanly.');
+        process.exit(0);
+    }, 300);
 };
-process.on('SIGINT', handleShutdown);
-process.on('SIGTERM', handleShutdown);
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 
 // Handle process-level errors
 process.on('uncaughtException', (err) => {
