@@ -13,9 +13,9 @@
         "forceConsistentCasingInFileNames": true,
         "resolveJsonModule": true,
         "moduleResolution": "nodenext",
-        "declaration": true,
-        "declarationMap": true,
-        "sourceMap": true,
+        "declaration": false,
+        "declarationMap": false,
+        "sourceMap": false,
         "types": [
             "node"
         ]
