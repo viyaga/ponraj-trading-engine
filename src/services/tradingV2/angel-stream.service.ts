@@ -12,6 +12,8 @@ export interface AngelStreamTick {
     sequenceNumber?: string;
 }
 
+type WebSocketRawData = Buffer | ArrayBuffer | Buffer[] | string | any;
+
 export class AngelStreamService {
     private static instance: AngelStreamService | null = null;
     private ws: WebSocket | null = null;
@@ -145,7 +147,7 @@ export class AngelStreamService {
                     resolve();
                 });
 
-                socket.on('message', (data: WebSocket.RawData) => {
+                socket.on('message', (data: WebSocketRawData) => {
                     this.lastMessageTime = Date.now();
                     this.handleMessage(data);
                 });
@@ -226,7 +228,7 @@ export class AngelStreamService {
     /**
      * Parse binary tick message
      */
-    private handleMessage(data: WebSocket.RawData): void {
+    private handleMessage(data: WebSocketRawData): void {
         if (typeof data === 'string') {
             if (data === 'pong') return;
             try {

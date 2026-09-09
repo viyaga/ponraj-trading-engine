@@ -26,7 +26,15 @@ for (const proc of targetProcesses) {
 }
 console.log('Memory freed.\n');
 
-// 2. Compile TypeScript with low-memory profile
+// 2. Ensure packages are present
+try {
+  require.resolve('ws');
+} catch {
+  console.log('Detected missing packages, installing dependencies...');
+  execSync('npm install --prefer-offline --no-audit', { stdio: 'inherit' });
+}
+
+// 3. Compile TypeScript with low-memory profile
 console.log('Step 2/3: Building TypeScript project (tsc with 512MB heap cap)...');
 try {
   execSync('node --max-old-space-size=512 ./node_modules/typescript/bin/tsc', { stdio: 'inherit' });
