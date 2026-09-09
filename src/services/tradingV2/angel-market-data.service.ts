@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import { Candle } from './type';
 import { tradingCronLogger } from './logger';
 import env from '../../config/env';
+import { LiveCandleBuilder } from './live-candle-builder';
+import { CandleStorageService } from './candle-storage.service';
 
 // Angel One Index Symbol Tokens
 const ANGEL_TOKENS: Record<string, string> = {
@@ -44,23 +46,37 @@ export class AngelMarketDataService {
     private static readonly INCREMENTAL_PERIODS_15M = 3; // fetch last 3 × 15m = 45 min window
     private static readonly INCREMENTAL_PERIODS_1H  = 3; // fetch last 3 × 1h  = 3h window
 
-    // Rate limit: Angel One enforces max 3 req/sec on getCandleData across the client account.
-    // Minimum 350ms interval ensures we never exceed 3 req/sec.
+    // Rate limit & Concurrency Mutex: Angel One enforces max 3 req/sec across the client account,
+    // and burst/concurrent requests trigger HTTP 403 "Access denied because of exceeding access rate".
+    // We enforce sequential execution with a 650ms minimum spacing between requests.
     private static lastHistoricalApiCallTime = 0;
-    private static readonly HISTORICAL_MIN_INTERVAL_MS = 350;
+    private static readonly HISTORICAL_MIN_INTERVAL_MS = 650;
+    private static historicalApiQueue: Promise<void> = Promise.resolve();
+
+    // In-flight request deduplication map to prevent multiple concurrent requests for the same instrument & interval
+    private static inFlightCandles = new Map<string, Promise<Candle[]>>();
 
     /**
-     * Enforces rate-limiting spacing for Angel One historical candle API (≤3 req/sec).
-     * Ensures calls to getCandleData are always spaced out by at least 350ms.
+     * Enforces sequential execution and rate-limiting spacing for Angel One historical candle API.
+     * Prevents concurrent calls from firing simultaneously, spacing each call by at least 650ms.
      */
     private static async throttleHistoricalApi(): Promise<void> {
-        const now = Date.now();
-        const elapsed = now - this.lastHistoricalApiCallTime;
-        if (elapsed < this.HISTORICAL_MIN_INTERVAL_MS) {
-            const waitMs = this.HISTORICAL_MIN_INTERVAL_MS - elapsed;
-            await new Promise(resolve => setTimeout(resolve, waitMs));
+        const prevQueue = this.historicalApiQueue;
+        let releaseLock: () => void;
+        this.historicalApiQueue = new Promise(resolve => { releaseLock = resolve; });
+
+        await prevQueue;
+        try {
+            const now = Date.now();
+            const elapsed = now - this.lastHistoricalApiCallTime;
+            if (elapsed < this.HISTORICAL_MIN_INTERVAL_MS) {
+                const waitMs = this.HISTORICAL_MIN_INTERVAL_MS - elapsed;
+                await new Promise(resolve => setTimeout(resolve, waitMs));
+            }
+        } finally {
+            this.lastHistoricalApiCallTime = Date.now();
+            releaseLock!();
         }
-        this.lastHistoricalApiCallTime = Date.now();
     }
 
     /**
@@ -369,16 +385,34 @@ export class AngelMarketDataService {
 
         const symbolToken = ANGEL_TOKENS[indexName.toUpperCase().replace('NSE:', '')] || '99926000';
         const cacheKey    = `${symbolToken}:15minute`;
+
+        // ── 1. In-flight request deduplication ───────────────────────────────
+        if (this.inFlightCandles.has(cacheKey)) {
+            tradingCronLogger.debug(`[AngelMarketDataService] In-flight request reused for 15m candles (${cacheKey})`);
+            return this.inFlightCandles.get(cacheKey)!;
+        }
+
         const nowMs       = Date.now();
         // Use IST-anchored boundary so it aligns with NSE's 09:15-grid candle timestamps
         const boundary    = this.candleBoundary15m(nowMs);
-        // Candles from before today's 09:15 AM IST are from the previous trading session
-        const todayOpen   = this.todayMarketOpenMs(nowMs);
 
-        const cached = this.candleCache.get(cacheKey);
+        let cached = this.candleCache.get(cacheKey);
 
-        // ── SAME CANDLE PERIOD: serve from cache instantly ───────────────────
-        if (cached && cached.lastCandleBoundary === boundary) {
+        // ── 2. Pre-seed from MongoDB on cold start / empty memory cache ──────
+        if (!cached || cached.candles.length === 0) {
+            const dbCandles = await CandleStorageService.getCandles(symbolToken, '15minute', 150);
+            if (dbCandles.length > 0) {
+                const latestDbTs = dbCandles[dbCandles.length - 1].timestamp;
+                cached = { candles: dbCandles, lastCandleBoundary: latestDbTs };
+                this.candleCache.set(cacheKey, cached);
+                tradingCronLogger.info(
+                    `[AngelMarketDataService] ⚡ Pre-seeded 15m memory cache from DB for ${indexName}: ${dbCandles.length} candles`
+                );
+            }
+        }
+
+        // ── 3. SAME CANDLE PERIOD: serve from cache instantly ────────────────
+        if (cached && cached.lastCandleBoundary === boundary && cached.candles.length > 0) {
             tradingCronLogger.debug(
                 `[AngelMarketDataService] 15m cache HIT (same period) — ` +
                 `${cached.candles.length} candles for ${indexName}, boundary: ${new Date(boundary).toISOString()}`
@@ -409,90 +443,143 @@ export class AngelMarketDataService {
             todate:      this.formatDate(to),
         };
 
-        // Try up to 2 attempts with backoff if rate-limited
-        for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-                const token     = await this.getValidJwtToken(apiKey);
-                await this.throttleHistoricalApi();
-                const startTime = Date.now();
-                const response  = await fetch(
-                    'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept':       'application/json',
-                            'X-UserType':   'USER',
-                            'X-SourceID':   'WEB',
-                            'X-ClientLocalIP':  '127.0.0.1',
-                            'X-ClientPublicIP': '127.0.0.1',
-                            'X-MACAddress': 'FE:80:00:00:00:00',
-                            'X-PrivateKey': apiKey,
-                            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-                        },
-                        body: JSON.stringify(body),
-                    }
-                );
-
-                const duration = Date.now() - startTime;
-                const text     = await response.text();
-
-                let json: any;
+        const fetchPromise = (async (): Promise<Candle[]> => {
+            const MAX_ATTEMPTS = 4;
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
                 try {
-                    json = JSON.parse(text);
-                } catch {
-                    tradingCronLogger.warn(
-                        `[AngelMarketDataService] ⚠️ 15m candles response non-JSON ` +
-                        `(HTTP ${response.status}, ${duration}ms, attempt ${attempt}): ${text.slice(0, 120)}`
+                    const token     = await this.getValidJwtToken(apiKey);
+                    await this.throttleHistoricalApi();
+                    const startTime = Date.now();
+                    const response  = await fetch(
+                        'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept':       'application/json',
+                                'X-UserType':   'USER',
+                                'X-SourceID':   'WEB',
+                                'X-ClientLocalIP':  '127.0.0.1',
+                                'X-ClientPublicIP': '127.0.0.1',
+                                'X-MACAddress': 'FE:80:00:00:00:00',
+                                'X-PrivateKey': apiKey,
+                                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                            },
+                            body: JSON.stringify(body),
+                        }
                     );
-                    if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
-                    return cached?.candles ?? [];
+
+                    const duration = Date.now() - startTime;
+                    const text     = await response.text();
+
+                    let json: any;
+                    try {
+                        json = JSON.parse(text);
+                    } catch {
+                        tradingCronLogger.warn(
+                            `[AngelMarketDataService] ⚠️ 15m candles response non-JSON ` +
+                            `(HTTP ${response.status}, ${duration}ms, attempt ${attempt}/${MAX_ATTEMPTS}): ${text.slice(0, 120)}`
+                        );
+                        if (attempt < MAX_ATTEMPTS) {
+                            await new Promise(r => setTimeout(r, attempt * 1500));
+                            continue;
+                        }
+                        break;
+                    }
+
+                    // Check for rate limit response (HTTP 403/429 or status=false with rate error message)
+                    const isRateLimited =
+                        response.status === 403 ||
+                        response.status === 429 ||
+                        json?.errorcode === 'AB1004' ||
+                        json?.message?.toLowerCase().includes('rate') ||
+                        json?.message?.toLowerCase().includes('access denied');
+
+                    if (isRateLimited) {
+                        const backoffMs = attempt === 1 ? 1200 : attempt === 2 ? 2500 : 4500;
+                        tradingCronLogger.warn(
+                            `[AngelMarketDataService] ⚠️ Angel One rate limit on 15m candles ` +
+                            `(HTTP ${response.status}, attempt ${attempt}/${MAX_ATTEMPTS}): "${json?.message ?? 'Rate exceeded'}". Backing off ${backoffMs}ms...`
+                        );
+                        if (attempt < MAX_ATTEMPTS) {
+                            await new Promise(r => setTimeout(r, backoffMs));
+                            continue;
+                        }
+                        break;
+                    }
+
+                    if (json?.status === true && Array.isArray(json?.data)) {
+                        const incoming = this.parseCandles(json.data);
+                        // Filter out only forming candle (timestamp >= boundary).
+                        // Retain ALL completed candles across the bootstrap lookback period (e.g. 7 days)
+                        // so ATR-14 always has full history (> 15 bars) to compute.
+                        const completed = incoming.filter(c => c.timestamp < boundary);
+
+                        const merged = isColdStart
+                            ? completed
+                            : this.mergeCandles(cached?.candles ?? [], completed);
+
+                        this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
+                        // Persist completed candles into MongoDB asynchronously
+                        CandleStorageService.saveCandles(symbolToken, '15minute', completed).catch(() => {});
+
+                        tradingCronLogger.info(
+                            `[AngelMarketDataService] ✔ 15m candles updated for ${indexName} (${duration}ms) | ` +
+                            `fetched: ${incoming.length} raw → ${completed.length} completed | ` +
+                            `cache total: ${merged.length} completed candles | ` +
+                            `${isColdStart ? 'cold start' : `+${completed.length - (cached?.candles.filter(c => c.timestamp >= boundary - this.FIFTEEN_MIN_MS).length ?? 0)} new`}`
+                        );
+                        return merged;
+                    } else {
+                        tradingCronLogger.warn(
+                            `[AngelMarketDataService] ✖ Angel One non-success for 15m candles ` +
+                            `(HTTP ${response.status}, ${duration}ms, attempt ${attempt}/${MAX_ATTEMPTS}): ` +
+                            `status=${json?.status}, message="${json?.message ?? 'N/A'}"`
+                        );
+                        if (attempt < MAX_ATTEMPTS) {
+                            await new Promise(r => setTimeout(r, 1500));
+                            continue;
+                        }
+                        break;
+                    }
+                } catch (err: any) {
+                    tradingCronLogger.error(`[AngelMarketDataService] ✖ 15m fetch error (attempt ${attempt}/${MAX_ATTEMPTS}): ${err.message}`, { error: err });
+                    if (attempt < MAX_ATTEMPTS) {
+                        await new Promise(r => setTimeout(r, 1500));
+                        continue;
+                    }
+                    break;
                 }
-
-                if (json?.status === true && Array.isArray(json?.data)) {
-                    const incoming = this.parseCandles(json.data);
-                    // Filter out: (1) the currently-forming candle (boundary = current IST-aligned period start)
-                    //             (2) candles from before today's 09:15 AM IST — these are prior-day leftovers
-                    //             that appear when the engine runs before market open (e.g. 06:49 AM in test mode)
-                    const completed = incoming.filter(c => c.timestamp < boundary && c.timestamp >= todayOpen);
-
-                    // If we are before market open, carry forward yesterday's completed candles from cache
-                    // so ATR-14 still has history to compute on. Today's filter just removes stale day-end candles
-                    // that would misrepresent the "latest bar" as 15:15 from yesterday.
-                    const merged = isColdStart
-                        ? completed
-                        : this.mergeCandles(
-                            cached!.candles.filter(c => c.timestamp >= todayOpen), // drop prior-day cache entries
-                            completed
-                          );
-
-                    this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
-
-                    tradingCronLogger.info(
-                        `[AngelMarketDataService] ✔ 15m candles updated for ${indexName} (${duration}ms) | ` +
-                        `fetched: ${incoming.length} raw → ${completed.length} today-completed | ` +
-                        `todayOpen: ${new Date(todayOpen).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST | ` +
-                        `boundary: ${new Date(boundary).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST | ` +
-                        `cache total: ${merged.length} candles | ` +
-                        `${isColdStart ? 'cold start' : `+${completed.length - (cached?.candles.filter(c => c.timestamp >= boundary - this.FIFTEEN_MIN_MS).length ?? 0)} new`}`
-                    );
-                    return merged;
-                } else {
-                    tradingCronLogger.warn(
-                        `[AngelMarketDataService] ✖ Angel One non-success for 15m candles ` +
-                        `(HTTP ${response.status}, ${duration}ms, attempt ${attempt}): ` +
-                        `status=${json?.status}, message="${json?.message ?? 'N/A'}"`
-                    );
-                    if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
-                    return cached?.candles ?? [];
-                }
-            } catch (err: any) {
-                tradingCronLogger.error(`[AngelMarketDataService] ✖ 15m fetch error (attempt ${attempt}): ${err.message}`, { error: err });
-                if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
-                return cached?.candles ?? [];
             }
-        }
-        return cached?.candles ?? [];
+
+            // ── Fallback 1: WebSocket live stream captured completed 15m bar ─
+            const streamCandle = LiveCandleBuilder.getLastCompleted15mCandle(symbolToken);
+            if (streamCandle && streamCandle.timestamp < boundary) {
+                const existing = cached?.candles ?? [];
+                const merged = this.mergeCandles(existing, [streamCandle]);
+                this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
+                CandleStorageService.saveCandles(symbolToken, '15minute', [streamCandle]).catch(() => {});
+                tradingCronLogger.info(
+                    `[AngelMarketDataService] ⚡ Using LiveCandleBuilder completed 15m candle fallback: total ${merged.length} candles`
+                );
+                return merged;
+            }
+
+            // ── Fallback 2: Retain previous cached completed candles ───────────
+            if (cached && cached.candles.length > 0) {
+                tradingCronLogger.warn(
+                    `[AngelMarketDataService] ⚠️ 15m REST fetch failed after ${MAX_ATTEMPTS} attempts, retaining previous ${cached.candles.length} cached candles.`
+                );
+                return cached.candles;
+            }
+
+            return [];
+        })().finally(() => {
+            this.inFlightCandles.delete(cacheKey);
+        });
+
+        this.inFlightCandles.set(cacheKey, fetchPromise);
+        return fetchPromise;
     }
 
     /**
@@ -512,13 +599,33 @@ export class AngelMarketDataService {
 
         const symbolToken = ANGEL_TOKENS[indexName.toUpperCase().replace('NSE:', '')] || '99926000';
         const cacheKey    = `${symbolToken}:60minute`;
+
+        // ── 1. In-flight request deduplication ───────────────────────────────
+        if (this.inFlightCandles.has(cacheKey)) {
+            tradingCronLogger.debug(`[AngelMarketDataService] In-flight request reused for 1h candles (${cacheKey})`);
+            return this.inFlightCandles.get(cacheKey)!;
+        }
+
         const nowMs       = Date.now();
         const boundary    = this.candleBoundary1h(nowMs);
 
-        const cached = this.candleCache.get(cacheKey);
+        let cached = this.candleCache.get(cacheKey);
 
-        // ── SAME CANDLE PERIOD: serve from cache instantly ───────────────────
-        if (cached && cached.lastCandleBoundary === boundary) {
+        // ── 2. Pre-seed from MongoDB on cold start / empty memory cache ──────
+        if (!cached || cached.candles.length === 0) {
+            const dbCandles = await CandleStorageService.getCandles(symbolToken, '60minute', 200);
+            if (dbCandles.length > 0) {
+                const latestDbTs = dbCandles[dbCandles.length - 1].timestamp;
+                cached = { candles: dbCandles, lastCandleBoundary: latestDbTs };
+                this.candleCache.set(cacheKey, cached);
+                tradingCronLogger.info(
+                    `[AngelMarketDataService] ⚡ Pre-seeded 1h memory cache from DB for ${indexName}: ${dbCandles.length} candles`
+                );
+            }
+        }
+
+        // ── 3. SAME CANDLE PERIOD: serve from cache instantly ────────────────
+        if (cached && cached.lastCandleBoundary === boundary && cached.candles.length > 0) {
             tradingCronLogger.debug(
                 `[AngelMarketDataService] 1h cache HIT (same period) — ` +
                 `${cached.candles.length} candles for ${indexName}, boundary: ${new Date(boundary).toISOString()}`
@@ -548,79 +655,127 @@ export class AngelMarketDataService {
             todate:      this.formatDate(to),
         };
 
-        // Try up to 2 attempts with backoff if rate-limited
-        for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-                const token     = await this.getValidJwtToken(apiKey);
-                await this.throttleHistoricalApi();
-                const startTime = Date.now();
-                const response  = await fetch(
-                    'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept':       'application/json',
-                            'X-UserType':   'USER',
-                            'X-SourceID':   'WEB',
-                            'X-ClientLocalIP':  '127.0.0.1',
-                            'X-ClientPublicIP': '127.0.0.1',
-                            'X-MACAddress': 'FE:80:00:00:00:00',
-                            'X-PrivateKey': apiKey,
-                            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-                        },
-                        body: JSON.stringify(body),
-                    }
-                );
-
-                const duration = Date.now() - startTime;
-                const text     = await response.text();
-
-                let json: any;
+        const fetchPromise = (async (): Promise<Candle[]> => {
+            const MAX_ATTEMPTS = 4;
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
                 try {
-                    json = JSON.parse(text);
-                } catch {
-                    tradingCronLogger.warn(
-                        `[AngelMarketDataService] ⚠️ 1h candles response non-JSON ` +
-                        `(HTTP ${response.status}, ${duration}ms, attempt ${attempt}): ${text.slice(0, 120)}`
+                    const token     = await this.getValidJwtToken(apiKey);
+                    await this.throttleHistoricalApi();
+                    const startTime = Date.now();
+                    const response  = await fetch(
+                        'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept':       'application/json',
+                                'X-UserType':   'USER',
+                                'X-SourceID':   'WEB',
+                                'X-ClientLocalIP':  '127.0.0.1',
+                                'X-ClientPublicIP': '127.0.0.1',
+                                'X-MACAddress': 'FE:80:00:00:00:00',
+                                'X-PrivateKey': apiKey,
+                                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                            },
+                            body: JSON.stringify(body),
+                        }
                     );
-                    if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
-                    return cached?.candles ?? [];
+
+                    const duration = Date.now() - startTime;
+                    const text     = await response.text();
+
+                    let json: any;
+                    try {
+                        json = JSON.parse(text);
+                    } catch {
+                        tradingCronLogger.warn(
+                            `[AngelMarketDataService] ⚠️ 1h candles response non-JSON ` +
+                            `(HTTP ${response.status}, ${duration}ms, attempt ${attempt}/${MAX_ATTEMPTS}): ${text.slice(0, 120)}`
+                        );
+                        if (attempt < MAX_ATTEMPTS) {
+                            await new Promise(r => setTimeout(r, attempt * 1500));
+                            continue;
+                        }
+                        break;
+                    }
+
+                    // Check for rate limit response (HTTP 403/429 or status=false with rate error message)
+                    const isRateLimited =
+                        response.status === 403 ||
+                        response.status === 429 ||
+                        json?.errorcode === 'AB1004' ||
+                        json?.message?.toLowerCase().includes('rate') ||
+                        json?.message?.toLowerCase().includes('access denied');
+
+                    if (isRateLimited) {
+                        const backoffMs = attempt === 1 ? 1200 : attempt === 2 ? 2500 : 4500;
+                        tradingCronLogger.warn(
+                            `[AngelMarketDataService] ⚠️ Angel One rate limit on 1h candles ` +
+                            `(HTTP ${response.status}, attempt ${attempt}/${MAX_ATTEMPTS}): "${json?.message ?? 'Rate exceeded'}". Backing off ${backoffMs}ms...`
+                        );
+                        if (attempt < MAX_ATTEMPTS) {
+                            await new Promise(r => setTimeout(r, backoffMs));
+                            continue;
+                        }
+                        break;
+                    }
+
+                    if (json?.status === true && Array.isArray(json?.data)) {
+                        const incoming  = this.parseCandles(json.data);
+                        const completed = incoming.filter(c => c.timestamp < boundary);
+
+                        const merged = isColdStart
+                            ? completed
+                            : this.mergeCandles(cached?.candles ?? [], completed);
+
+                        this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
+                        // Persist completed 1h candles into MongoDB asynchronously
+                        CandleStorageService.saveCandles(symbolToken, '60minute', completed).catch(() => {});
+
+                        tradingCronLogger.info(
+                            `[AngelMarketDataService] ✔ 1h candles updated for ${indexName} (${duration}ms) | ` +
+                            `fetched: ${incoming.length} raw → ${completed.length} completed | ` +
+                            `cache total: ${merged.length} candles | ` +
+                            `${isColdStart ? 'cold start' : `+${completed.length - (cached?.candles.filter(c => c.timestamp >= boundary - this.ONE_HOUR_MS).length ?? 0)} new`}`
+                        );
+                        return merged;
+                    } else {
+                        tradingCronLogger.warn(
+                            `[AngelMarketDataService] ✖ Angel One non-success for 1h candles ` +
+                            `(HTTP ${response.status}, ${duration}ms, attempt ${attempt}/${MAX_ATTEMPTS}): ` +
+                            `status=${json?.status}, message="${json?.message ?? 'N/A'}"`
+                        );
+                        if (attempt < MAX_ATTEMPTS) {
+                            await new Promise(r => setTimeout(r, 1500));
+                            continue;
+                        }
+                        break;
+                    }
+                } catch (err: any) {
+                    tradingCronLogger.error(`[AngelMarketDataService] ✖ 1h fetch error (attempt ${attempt}/${MAX_ATTEMPTS}): ${err.message}`, { error: err });
+                    if (attempt < MAX_ATTEMPTS) {
+                        await new Promise(r => setTimeout(r, 1500));
+                        continue;
+                    }
+                    break;
                 }
-
-                if (json?.status === true && Array.isArray(json?.data)) {
-                    const incoming  = this.parseCandles(json.data);
-                    const completed = incoming.filter(c => c.timestamp < boundary);
-
-                    const merged = isColdStart
-                        ? completed
-                        : this.mergeCandles(cached!.candles, completed);
-
-                    this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
-
-                    tradingCronLogger.info(
-                        `[AngelMarketDataService] ✔ 1h candles updated for ${indexName} (${duration}ms) | ` +
-                        `fetched: ${incoming.length} raw → ${completed.length} completed | ` +
-                        `cache total: ${merged.length} candles | ` +
-                        `${isColdStart ? 'cold start' : `+${completed.length - (cached?.candles.filter(c => c.timestamp >= boundary - this.ONE_HOUR_MS).length ?? 0)} new`}`
-                    );
-                    return merged;
-                } else {
-                    tradingCronLogger.warn(
-                        `[AngelMarketDataService] ✖ Angel One non-success for 1h candles ` +
-                        `(HTTP ${response.status}, ${duration}ms, attempt ${attempt}): ` +
-                        `status=${json?.status}, message="${json?.message ?? 'N/A'}"`
-                    );
-                    if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
-                    return cached?.candles ?? [];
-                }
-            } catch (err: any) {
-                tradingCronLogger.error(`[AngelMarketDataService] ✖ 1h fetch error (attempt ${attempt}): ${err.message}`, { error: err });
-                if (attempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
-                return cached?.candles ?? [];
             }
-        }
-        return cached?.candles ?? [];
+
+            // Fallback: retain previous cached candles if available
+            if (cached && cached.candles.length > 0) {
+                tradingCronLogger.warn(
+                    `[AngelMarketDataService] ⚠️ 1h REST fetch failed after ${MAX_ATTEMPTS} attempts, retaining previous ${cached.candles.length} cached candles.`
+                );
+                return cached.candles;
+            }
+
+            return [];
+        })().finally(() => {
+            this.inFlightCandles.delete(cacheKey);
+        });
+
+        this.inFlightCandles.set(cacheKey, fetchPromise);
+        return fetchPromise;
     }
 
 

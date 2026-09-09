@@ -10,6 +10,7 @@ import errorLogger from './utils/errorLogger';
 
 
 import { AngelStreamService } from './services/tradingV2/angel-stream.service';
+import { CandleStorageService } from './services/tradingV2/candle-storage.service';
 
 let isShuttingDown = false;
 let serverInstance: any = null;
@@ -17,6 +18,9 @@ let serverInstance: any = null;
 const startServer = async (): Promise<void> => {
     // Connect to MongoDB
     await connectDB();
+
+    // Prune expired candles older than 45 days on startup
+    CandleStorageService.pruneOldCandles(45).catch(() => {});
 
     // Start Angel One SmartStream WebSocket
     const angelStream = AngelStreamService.getInstance();

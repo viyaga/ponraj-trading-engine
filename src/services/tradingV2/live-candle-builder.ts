@@ -1,11 +1,14 @@
 import { Candle } from './type';
 import { AngelMarketDataService } from './angel-market-data.service';
+import { CandleStorageService } from './candle-storage.service';
 import { tradingCronLogger } from './logger';
 
 export class LiveCandleBuilder {
     // Current accumulating live candles: token -> Candle
     private static live1hMap = new Map<string, Candle>();
     private static live15mMap = new Map<string, Candle>();
+    // Last completed 15m candle (archived when boundary rolls): token -> Candle
+    private static lastCompleted15mMap = new Map<string, Candle>();
 
     /**
      * Process incoming WebSocket tick and update forming 15m and 1H candles
@@ -18,6 +21,11 @@ export class LiveCandleBuilder {
         const candle1h = this.live1hMap.get(token);
 
         if (!candle1h || candle1h.timestamp !== boundary1h) {
+            // If previous 1H candle existed and rolled over, persist to DB
+            if (candle1h && candle1h.timestamp < boundary1h) {
+                CandleStorageService.saveCandles(token, '60minute', [{ ...candle1h }]).catch(() => {});
+            }
+
             const timeStr = new Date(boundary1h).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
             tradingCronLogger.info(`[LiveCandleBuilder] 🕯️ New 1H bar started [${timeStr} IST] | Open: ₹${ltp.toFixed(2)}`);
             this.live1hMap.set(token, {
@@ -46,6 +54,19 @@ export class LiveCandleBuilder {
         const candle15m = this.live15mMap.get(token);
 
         if (!candle15m || candle15m.timestamp !== boundary15m) {
+            // If previous candle existed and belongs to the prior boundary, archive it as completed
+            if (candle15m && candle15m.timestamp < boundary15m) {
+                const completed = { ...candle15m };
+                this.lastCompleted15mMap.set(token, completed);
+                CandleStorageService.saveCandles(token, '15minute', [completed]).catch(() => {});
+
+                const prevTimeStr = new Date(candle15m.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+                tradingCronLogger.info(
+                    `[LiveCandleBuilder] ✔ 15m candle completed [${prevTimeStr} IST] | ` +
+                    `O: ₹${candle15m.open.toFixed(2)} H: ₹${candle15m.high.toFixed(2)} L: ₹${candle15m.low.toFixed(2)} C: ₹${candle15m.close.toFixed(2)}`
+                );
+            }
+
             // Start a new 15m candle at boundary
             this.live15mMap.set(token, {
                 timestamp: boundary15m,
@@ -139,8 +160,17 @@ export class LiveCandleBuilder {
         return { ...live };
     }
 
+    /**
+     * Get the last completed 15m candle formed from live WebSocket stream
+     */
+    public static getLastCompleted15mCandle(token: string): Candle | null {
+        const c = this.lastCompleted15mMap.get(token);
+        return c ? { ...c } : null;
+    }
+
     public static clear(): void {
         this.live1hMap.clear();
         this.live15mMap.clear();
+        this.lastCompleted15mMap.clear();
     }
 }

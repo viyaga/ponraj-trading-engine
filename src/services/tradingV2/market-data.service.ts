@@ -39,8 +39,9 @@ export class MarketDataService {
 
     /**
      * Fetch 15-minute candles for the index instrument.
-     * Prefers Angel One SmartAPI (100% Free Candles) if configured,
-     * falling back to Zerodha Kite historical API.
+     * Uses Angel One SmartAPI (Free Historical Candles) with automated backoff retries.
+     * Zerodha historical candle fallback is intentionally disabled because
+     * Kite historical data requires a separate paid subscription add-on.
      */
     static async get15mCandles(
         kite:  KiteExchange,
@@ -55,56 +56,21 @@ export class MarketDataService {
         }
 
         const fetchPromise = (async () => {
-            const now  = Date.now();
-            // Use IST-anchored 15m boundary (matches NSE's 09:15 grid) — same as AngelMarketDataService
+            const now = Date.now();
             const currentCandleStart = AngelMarketDataService.candleBoundary15m(now);
-            // Candles from before today's 09:15 AM IST are from the previous trading session
-            const todayOpen = AngelMarketDataService.todayMarketOpenMs(now);
 
-            // 1. Try Angel One SmartAPI (Free)
+            // Fetch from Angel One SmartAPI (includes 4-attempt backoff on rate limits and stream fallback)
             try {
                 const angelCandles = await AngelMarketDataService.get15mCandles(index);
                 if (angelCandles && angelCandles.length > 0) {
-                    // AngelMarketDataService already filters to today-completed, but re-apply
-                    // the guard here in case the cache was primed before this fix was deployed.
-                    const filtered = angelCandles.filter(c => c.timestamp < currentCandleStart && c.timestamp >= todayOpen);
+                    const filtered = angelCandles.filter(c => c.timestamp < currentCandleStart);
                     tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One 15m candles: ${filtered.length} completed candles for ${index}`);
                     return filtered;
                 }
-                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned 0 15m candles for ${index}, attempting Zerodha fallback`);
+                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned 0 completed 15m candles for ${index}`);
+                return [];
             } catch (err: any) {
-                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One 15m candle fetch failed, falling back to Zerodha: ${err.message}`, { error: err });
-            }
-
-            // 2. Fallback to Zerodha Kite API
-            const from = new Date(now - CANDLE_LOOKBACK * FIFTEEN_MIN_MS);
-            const to   = new Date(now);
-
-            tradingCronLogger.info(`[MarketDataService] ➔ Fetching 15m candles from Zerodha Kite: ${instrument} (${from.toISOString()} to ${to.toISOString()})`);
-            try {
-                const candles = await kite.getCandlestickData(instrument, '15minute', from, to);
-                // Strip forming candle AND prior-day candles from Zerodha data too
-                const filtered = candles.filter(c => c.timestamp < currentCandleStart && c.timestamp >= todayOpen);
-                tradingCronLogger.info(`[MarketDataService] ✔ Received ${candles.length} raw 15m candles from Zerodha (${filtered.length} today-completed candles)`);
-                return filtered;
-            } catch (zerodhaErr: any) {
-                const isPermissionError =
-                    zerodhaErr?.error_type === 'PermissionException' ||
-                    zerodhaErr?.message?.toLowerCase().includes('permission') ||
-                    zerodhaErr?.message?.toLowerCase().includes('insufficient permission');
-
-                if (isPermissionError) {
-                    tradingCycleErrorLogger.error(
-                        `[MarketDataService] ❌ Zerodha 15m historical data BLOCKED (PermissionException). ` +
-                        `This is a SUBSCRIPTION issue, NOT a credentials/token issue. ` +
-                        `Historical candle data requires the Kite Connect plan with historical data access enabled. ` +
-                        `See: https://kite.trade/docs/connect/v3/historical/ | Error: ${zerodhaErr.message}`
-                    );
-                } else {
-                    tradingCycleErrorLogger.error(
-                        `[MarketDataService] ❌ Zerodha 15m candle fetch failed: ${zerodhaErr.message}`, { error: zerodhaErr }
-                    );
-                }
+                tradingCycleErrorLogger.error(`[MarketDataService] ✖ Angel One 15m candle fetch error: ${err.message}`, { error: err });
                 return [];
             }
         })();
@@ -119,7 +85,8 @@ export class MarketDataService {
 
     /**
      * Fetch 1-hour (60-minute) candles for the index instrument.
-     * Prefers Angel One SmartAPI if configured, falling back to Zerodha Kite.
+     * Uses Angel One SmartAPI (Free Historical Candles).
+     * Zerodha historical fallback is disabled because Kite historical data requires a paid add-on.
      *
      * Returns only COMPLETED candles (timestamp < current 1H boundary).
      */
@@ -139,7 +106,6 @@ export class MarketDataService {
             const now = Date.now();
             const boundary1h = AngelMarketDataService.candleBoundary1h(now);
 
-            // 1. Try Angel One SmartAPI (Free)
             try {
                 const angelCandles = await AngelMarketDataService.get1hCandles(index);
                 if (angelCandles && angelCandles.length > 0) {
@@ -147,20 +113,12 @@ export class MarketDataService {
                     tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One 1h candles: ${filtered.length} completed candles for ${index}`);
                     return filtered;
                 }
-                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned 0 1h candles for ${index}, attempting Zerodha fallback`);
+                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned 0 1h candles for ${index}`);
+                return [];
             } catch (err: any) {
-                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One 1h candle fetch failed, falling back to Zerodha: ${err.message}`, { error: err });
+                tradingCycleErrorLogger.error(`[MarketDataService] ✖ Angel One 1h candle fetch failed: ${err.message}`, { error: err });
+                return [];
             }
-
-            // 2. Fallback to Zerodha Kite API (45 calendar days = ~30 trading days = ~180-200 candles for full Wilder's RMA stabilization)
-            const from = new Date(now - 45 * 24 * ONE_HOUR_MS);
-            const to   = new Date(now);
-
-            tradingCronLogger.info(`[MarketDataService] ➔ Fetching 1h candles from Zerodha Kite: ${instrument} (${from.toISOString()} to ${to.toISOString()})`);
-            const candles = await kite.getCandlestickData(instrument, '60minute', from, to);
-            const filtered = candles.filter(c => c.timestamp < boundary1h);
-            tradingCronLogger.info(`[MarketDataService] ✔ Received ${candles.length} raw 1h candles from Zerodha (${filtered.length} completed candles)`);
-            return filtered;
         })();
 
         fetchPromise.catch((err) => {
