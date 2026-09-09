@@ -7,6 +7,7 @@ import { ITradeState, TradeState } from '../../models/tradeState.model';
 import { TradingConfig } from './config';
 import { configDebugLogger, tradingCronLogger } from './logger';
 import { ConfigType, ActiveSubscribedBot } from './type';
+import { ActivePositionTracker } from './active-position-tracker';
 
 export class Data {
 
@@ -226,6 +227,10 @@ export class Data {
     // ─── Open position check ──────────────────────────────────────────────────
 
     static async hasOpenPosition(tradingBotId: string): Promise<boolean> {
+        // Fast-path: if in-memory tracker confirms no bot has any open position, return false instantly (0 DB queries)
+        const anyOpen = await ActivePositionTracker.hasActivePositions();
+        if (!anyOpen) return false;
+
         const st = await TradeState.findOne({ tradingBotId, status: { $in: ['open', 'entry_pending'] } });
         return !!(st?.entryOrderId);
     }

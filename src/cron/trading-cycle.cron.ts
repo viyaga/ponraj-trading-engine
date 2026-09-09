@@ -13,6 +13,7 @@ import { AngelStreamService } from "../services/tradingV2/angel-stream.service";
 import { TriggerManagerService } from "../services/tradingV2/trigger-manager.service";
 import { LiveCandleBuilder } from "../services/tradingV2/live-candle-builder";
 import { TradeState } from "../models/tradeState.model";
+import { ActivePositionTracker } from "../services/tradingV2/active-position-tracker";
 
 /* ============================================================================
  * Cron Scheduler — Execution Window (Mon–Fri 9:30 AM - 3:15 PM IST)
@@ -115,8 +116,8 @@ const tradingCycleCronJob = (): void => {
             await TriggerManagerService.getInstance().refreshAllTriggers();
         }
 
-        // ── 4. Check if any active positions exist in DB ─────────────────────
-        const hasOpenPos = Boolean(await TradeState.exists({ status: { $in: ['open', 'entry_pending'] } }));
+        // ── 4. Check if any active positions exist (0-latency In-Memory Cache) ──
+        const hasOpenPos = await ActivePositionTracker.hasActivePositions();
         const stream = AngelStreamService.getInstance();
         const isStreamConnected = stream.isConnected();
 

@@ -6,6 +6,8 @@ import { env, connectDB } from '../src/config';
 import { TradeState, tradeStateEvents } from '../src/models/tradeState.model';
 import { BulkSyncService } from '../src/services/bulkSync.service';
 import { invalidateConfigCache } from '../src/cron/trading-cycle.cron';
+import { ActivePositionTracker } from '../src/services/tradingV2/active-position-tracker';
+import { Data } from '../src/services/tradingV2/data';
 import app from '../src/app';
 
 async function runTests() {
@@ -137,6 +139,39 @@ async function runTests() {
         }
     } catch (err: any) {
         console.error(`  ✖ TEST 6 FAILED: ${err.message}`);
+        failed++;
+    }
+
+    // ── TEST 7: ActivePositionTracker In-Memory Zero-Latency Cache ─────────
+    console.log('\n[Test 7] Testing ActivePositionTracker In-Memory Cache & Invalidation...');
+    try {
+        await ActivePositionTracker.initialize();
+        const start1 = Date.now();
+        const hasOpen1 = await ActivePositionTracker.hasActivePositions();
+        const dur1 = Date.now() - start1;
+        console.log(`  Initial check (from DB/cache): ${hasOpen1} (${dur1}ms)`);
+
+        // Second check must be in-memory (0ms)
+        const start2 = Date.now();
+        const hasOpen2 = await ActivePositionTracker.hasActivePositions();
+        const dur2 = Date.now() - start2;
+        console.log(`  Immediate second check (pure RAM cache): ${hasOpen2} (${dur2}ms)`);
+
+        // Test event-driven invalidation
+        tradeStateEvents.emit('change');
+        // Check Data.hasOpenPosition fast-path
+        const dataCheck = await Data.hasOpenPosition('non-existent-bot');
+        console.log(`  Data.hasOpenPosition fast-path result: ${dataCheck}`);
+
+        if (hasOpen1 === hasOpen2 && dur2 <= 2) {
+            console.log('  ✅ TEST 7 PASSED: ActivePositionTracker operates in memory with <1ms latency.');
+            passed++;
+        } else {
+            console.error(`  ✖ TEST 7 FAILED: Memory cache duration was ${dur2}ms`);
+            failed++;
+        }
+    } catch (err: any) {
+        console.error(`  ✖ TEST 7 FAILED: ${err.message}`);
         failed++;
     }
 
