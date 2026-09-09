@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "tsx --watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "restart": "node scripts/pm2-restart.js",
+    "pm2:restart": "node scripts/pm2-restart.js",
+    "pm2:stop": "pm2 delete ponraj-trading-engine || true",
+    "pm2:logs": "pm2 logs ponraj-trading-engine"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
