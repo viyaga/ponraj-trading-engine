@@ -15,7 +15,7 @@ export class TradingConfig {
         // Instrument defaults
         INDEX: 'NIFTY',
         EXCHANGE: 'NFO',
-        LOT_SIZE: 75,     // 1 NIFTY lot = 75 units
+        LOT_SIZE: 65,     // 1 NIFTY lot = 65 units
         NUMBER_OF_LOTS: 1,
         EXPIRY_TYPE: 'weekly',
 

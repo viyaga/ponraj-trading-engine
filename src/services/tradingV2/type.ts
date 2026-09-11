@@ -18,7 +18,7 @@ export interface ConfigType {
     // Instrument settings
     INDEX: 'NIFTY' | 'BANKNIFTY';
     EXCHANGE: 'NFO';
-    LOT_SIZE: number;           // 75 for NIFTY, 15 for BANKNIFTY
+    LOT_SIZE: number;           // 65 for NIFTY, 15 for BANKNIFTY
     NUMBER_OF_LOTS: number;
     EXPIRY_TYPE: 'weekly' | 'monthly';
 

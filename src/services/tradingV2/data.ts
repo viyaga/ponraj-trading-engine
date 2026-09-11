@@ -178,7 +178,7 @@ export class Data {
             // Instrument
             INDEX:           (bot.INDEX ?? defaults.INDEX) as 'NIFTY' | 'BANKNIFTY',
             EXCHANGE:        'NFO',
-            LOT_SIZE:        bot.LOT_SIZE        ?? defaults.LOT_SIZE        ?? 75,
+            LOT_SIZE:        bot.LOT_SIZE        ?? defaults.LOT_SIZE        ?? 65,
             NUMBER_OF_LOTS:  bot.NUMBER_OF_LOTS  ?? defaults.NUMBER_OF_LOTS  ?? 1,
             EXPIRY_TYPE:     (bot.EXPIRY_TYPE    ?? defaults.EXPIRY_TYPE)    as 'weekly' | 'monthly',
 

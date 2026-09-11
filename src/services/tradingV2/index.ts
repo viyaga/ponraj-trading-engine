@@ -526,7 +526,7 @@ export class TradingV2 {
 
             // In testing mode: execute trade ONLY for the smallest amount possible (strictly 1 lot)
             const numLots  = env.isTesting ? 1 : (c.NUMBER_OF_LOTS ?? 1);
-            const lotSize  = instrument.lot_size || c.LOT_SIZE || (c.INDEX === 'BANKNIFTY' ? 15 : 25);
+            const lotSize  = instrument.lot_size || c.LOT_SIZE || (c.INDEX === 'BANKNIFTY' ? 15 : 65);
             const quantity = lotSize * numLots;
             const capitalOutlay = optionLTP * quantity;
 
