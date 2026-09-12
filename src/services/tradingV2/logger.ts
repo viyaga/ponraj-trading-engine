@@ -1,4 +1,25 @@
+import fs from "fs";
+import path from "path";
 import util from "util";
+
+const LOG_DIR = path.join(process.cwd(), "logs");
+
+function appendToDailyLog(text: string): void {
+    try {
+        if (!fs.existsSync(LOG_DIR)) {
+            fs.mkdirSync(LOG_DIR, { recursive: true });
+        }
+        const now = new Date();
+        const year = now.getUTCFullYear();
+        const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+        const day = String(now.getUTCDate()).padStart(2, "0");
+        const dailyFile = path.join(LOG_DIR, `trading_${year}${month}${day}.log`);
+        const clean = text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
+        fs.appendFileSync(dailyFile, clean + "\n");
+    } catch {
+        // Silently ignore disk write error to prevent crash
+    }
+}
 
 const createConsoleLogger = (serviceName: string) => {
     const log = (level: string, message: string, meta?: any) => {
@@ -22,6 +43,9 @@ const createConsoleLogger = (serviceName: string) => {
                 msg += ` ${meta}`;
             }
         }
+        // Always write to daily log file for continuous debugging
+        appendToDailyLog(msg);
+
         if (level === "error") {
             console.error(msg);
         } else if (level === "warn") {

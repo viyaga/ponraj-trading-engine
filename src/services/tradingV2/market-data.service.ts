@@ -26,15 +26,14 @@ function getIndexInstrument(index: string): string {
 }
 
 export class MarketDataService {
-    private static candleCache = new Map<string, Promise<Candle[]>>();
     private static priceCache  = new Map<string, Promise<number>>();
 
     static clearCaches(): void {
         // Clear price cache every minute to fetch fresh LTP
         this.priceCache.clear();
-        // Clear intra-cycle promise cache so each cycle delegates to AngelMarketDataService's boundary-aware cache
-        this.candleCache.clear();
-        tradingCronLogger.debug('[MarketDataService] Intra-cycle cache reset (Spot LTP refreshed every minute; candle cache managed by boundary)');
+        // Clear AngelMarketDataService cache as well
+        AngelMarketDataService.clearCache();
+        tradingCronLogger.debug('[MarketDataService] Intra-cycle cache reset (Spot LTP refreshed; AngelMarketDataService cache cleared)');
     }
 
     /**
@@ -47,40 +46,22 @@ export class MarketDataService {
         kite:  KiteExchange,
         index: string
     ): Promise<Candle[]> {
-        const instrument = getIndexInstrument(index);
-        const cacheKey   = `${instrument}:15minute`;
+        const now = Date.now();
+        const currentCandleStart = AngelMarketDataService.candleBoundary15m(now);
 
-        if (this.candleCache.has(cacheKey)) {
-            tradingCronLogger.debug(`[MarketDataService] Cache HIT for 15m candles (${instrument})`);
-            return this.candleCache.get(cacheKey)!;
-        }
-
-        const fetchPromise = (async () => {
-            const now = Date.now();
-            const currentCandleStart = AngelMarketDataService.candleBoundary15m(now);
-
-            // Fetch from Angel One SmartAPI (includes 4-attempt backoff on rate limits and stream fallback)
-            try {
-                const angelCandles = await AngelMarketDataService.get15mCandles(index);
-                if (angelCandles && angelCandles.length > 0) {
-                    const filtered = angelCandles.filter(c => c.timestamp < currentCandleStart);
-                    tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One 15m candles: ${filtered.length} completed candles for ${index}`);
-                    return filtered;
-                }
-                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned 0 completed 15m candles for ${index}`);
-                return [];
-            } catch (err: any) {
-                tradingCycleErrorLogger.error(`[MarketDataService] ✖ Angel One 15m candle fetch error: ${err.message}`, { error: err });
-                return [];
+        try {
+            const angelCandles = await AngelMarketDataService.get15mCandles(index);
+            if (angelCandles && angelCandles.length > 0) {
+                const filtered = angelCandles.filter(c => c.timestamp < currentCandleStart);
+                tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One 15m candles: ${filtered.length} completed candles for ${index}`);
+                return filtered;
             }
-        })();
-
-        fetchPromise.catch((err) => {
-            tradingCycleErrorLogger.error(`[MarketDataService] ✖ Failed to fetch 15m candles for ${index}: ${err.message}`, { error: err });
-            this.candleCache.delete(cacheKey);
-        });
-        this.candleCache.set(cacheKey, fetchPromise);
-        return fetchPromise;
+            tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned 0 completed 15m candles for ${index}`);
+            return [];
+        } catch (err: any) {
+            tradingCycleErrorLogger.error(`[MarketDataService] ✖ Angel One 15m candle fetch error: ${err.message}`, { error: err });
+            return [];
+        }
     }
 
     /**
@@ -94,39 +75,22 @@ export class MarketDataService {
         kite:  KiteExchange,
         index: string
     ): Promise<Candle[]> {
-        const instrument = getIndexInstrument(index);
-        const cacheKey   = `${instrument}:60minute`;
+        const now = Date.now();
+        const boundary1h = AngelMarketDataService.candleBoundary1h(now);
 
-        if (this.candleCache.has(cacheKey)) {
-            tradingCronLogger.debug(`[MarketDataService] Cache HIT for 1h candles (${instrument})`);
-            return this.candleCache.get(cacheKey)!;
-        }
-
-        const fetchPromise = (async () => {
-            const now = Date.now();
-            const boundary1h = AngelMarketDataService.candleBoundary1h(now);
-
-            try {
-                const angelCandles = await AngelMarketDataService.get1hCandles(index);
-                if (angelCandles && angelCandles.length > 0) {
-                    const filtered = angelCandles.filter(c => c.timestamp < boundary1h);
-                    tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One 1h candles: ${filtered.length} completed candles for ${index}`);
-                    return filtered;
-                }
-                tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned 0 1h candles for ${index}`);
-                return [];
-            } catch (err: any) {
-                tradingCycleErrorLogger.error(`[MarketDataService] ✖ Angel One 1h candle fetch failed: ${err.message}`, { error: err });
-                return [];
+        try {
+            const angelCandles = await AngelMarketDataService.get1hCandles(index);
+            if (angelCandles && angelCandles.length > 0) {
+                const filtered = angelCandles.filter(c => c.timestamp < boundary1h);
+                tradingCronLogger.info(`[MarketDataService] ✔ Using Angel One 1h candles: ${filtered.length} completed candles for ${index}`);
+                return filtered;
             }
-        })();
-
-        fetchPromise.catch((err) => {
-            tradingCycleErrorLogger.error(`[MarketDataService] ✖ Failed to fetch 1h candles for ${index}: ${err.message}`, { error: err });
-            this.candleCache.delete(cacheKey);
-        });
-        this.candleCache.set(cacheKey, fetchPromise);
-        return fetchPromise;
+            tradingCronLogger.warn(`[MarketDataService] ⚠️ Angel One returned 0 1h candles for ${index}`);
+            return [];
+        } catch (err: any) {
+            tradingCycleErrorLogger.error(`[MarketDataService] ✖ Angel One 1h candle fetch failed: ${err.message}`, { error: err });
+            return [];
+        }
     }
 
     /**

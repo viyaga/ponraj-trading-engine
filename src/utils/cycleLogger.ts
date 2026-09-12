@@ -3,18 +3,24 @@ import path from "path";
 import util from "util";
 
 const LOG_DIR = path.join(process.cwd(), "logs");
-const MAX_LOG_FILES = 10;
+const MAX_LOG_FILES = 50;
 const FILE_PATTERN = /^cycle_\d{8}_\d{6}\.log$/; // matches cycle_YYYYMMDD_HHmmss.log
 
 let activeLogFile: string | null = null;
 let originalLog: typeof console.log | null = null;
 let originalError: typeof console.error | null = null;
 let originalWarn: typeof console.warn | null = null;
+let activeLoggingDepth = 0;
 
 /**
  * Starts cycle logging by creating a log file for the current cycle and intercepting console output.
  */
 export function startCycleLogging(): void {
+    activeLoggingDepth++;
+    if (activeLoggingDepth > 1 && activeLogFile) {
+        return; // Already logging to an active cycle file
+    }
+
     try {
         // Ensure log directory exists
         if (!fs.existsSync(LOG_DIR)) {
@@ -70,6 +76,11 @@ export function startCycleLogging(): void {
  * Ends cycle logging by resetting the active file and restoring original console functions.
  */
 export function endCycleLogging(): void {
+    activeLoggingDepth = Math.max(0, activeLoggingDepth - 1);
+    if (activeLoggingDepth > 0) {
+        return; // Still within an outer logging cycle
+    }
+
     activeLogFile = null;
     if (originalLog) {
         console.log = originalLog;

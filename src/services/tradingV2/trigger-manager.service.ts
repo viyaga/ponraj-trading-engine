@@ -104,7 +104,7 @@ export class TriggerManagerService {
     /**
      * Recalculate UT Bot trailing stop and crossover trigger thresholds for a bot
      */
-    public async refreshBotTriggers(botId: string): Promise<void> {
+    public async refreshBotTriggers(botId: string, isBoundaryClose: boolean = false): Promise<void> {
         const state = this.botStates.get(botId);
         if (!state) return;
 
@@ -113,7 +113,7 @@ export class TriggerManagerService {
 
         try {
             const kite = new KiteExchange(c.API_KEY, c.ACCESS_TOKEN);
-            // Fetch 1H completed candles
+            // Fetch fresh 1H completed candles (delegates to boundary-aware AngelMarketDataService)
             const candles1h = await MarketDataService.get1hCandles(kite, c.INDEX);
 
             if (!candles1h || candles1h.length < (c.UT_BOT_ATR_PERIOD ?? 10) + 2) {
@@ -132,12 +132,14 @@ export class TriggerManagerService {
             const currentPos = calc.posSeries[lastIdx];
             const currentStop = calc.trailingStopSeries[lastIdx];
             const lastBar = sorted[lastIdx];
+            const isBuy = calc.buySignals[lastIdx];
+            const isSell = calc.sellSignals[lastIdx];
 
             state.currentPos = currentPos;
             state.trailingStop = currentStop;
             state.lastEvaluatedCandleTs = lastBar.timestamp;
 
-            // Trigger thresholds:
+            // Trigger thresholds for live mid-candle monitoring:
             // If currentPos is SHORT (-1): price crossing ABOVE trailing stop triggers a BUY (CE).
             // If currentPos is LONG (1): price crossing BELOW trailing stop triggers a SELL (PE).
             if (currentPos === -1) {
@@ -164,8 +166,52 @@ export class TriggerManagerService {
                 `  Trailing Stop:   ₹${currentStop.toFixed(2)}\n` +
                 `  Bull Trigger:    ${state.bullTrigger ? '≥ ₹' + state.bullTrigger.toFixed(2) + ' (BUY CE)' : 'NONE'}\n` +
                 `  Bear Trigger:    ${state.bearTrigger ? '≤ ₹' + state.bearTrigger.toFixed(2) + ' (BUY PE)' : 'NONE'}\n` +
+                `  Signal On Close: ${isBuy ? '🟢 BUY' : isSell ? '🔴 SELL' : 'NONE'}\n` +
                 `  Open Position:   ${state.hasOpenPosition ? 'YES' : 'NO'}`
             );
+
+            // ── Check if the candle that JUST CLOSED produced an actionable crossover ──
+            if (isBoundaryClose && (isBuy || isSell) && !state.hasOpenPosition && !state.isExecuting) {
+                if (!isUTBotTradingWindow(c) && !env.isTesting) {
+                    tradingCronLogger.info(`[TriggerManager:${c.id}] ⏸️ Candle-close signal on [${barTime} IST] detected, but outside UT Bot trading window — skipping.`);
+                } else {
+                    const alreadyTraded = await TradeState.exists({
+                        tradingBotId: c.id,
+                        signalCandleTimestamp: lastBar.timestamp,
+                    });
+
+                    if (alreadyTraded && !env.isTesting) {
+                        tradingCronLogger.info(`[TriggerManager:${c.id}] ⏸️ Candle [${barTime} IST] already executed — skipping duplicate candle-close trade.`);
+                    } else {
+                        tradesLogger.info(
+                            `⚡ [TriggerManager:${c.id}:${c.INDEX}] 1-HOUR CANDLE CLOSE CROSSOVER DETECTED!\n` +
+                            `  Candle:          [${barTime} IST]\n` +
+                            `  Close:           ₹${lastBar.close.toFixed(2)}\n` +
+                            `  Trailing Stop:   ₹${currentStop.toFixed(2)}\n` +
+                            `  Signal:          ${isBuy ? 'BUY (CE)' : 'SELL (PE)'}\n` +
+                            `  Triggering trade execution pipeline...`
+                        );
+
+                        state.isExecuting = true;
+                        startCycleLogging();
+                        try {
+                            await TradingConfig.configStore.run(
+                                c,
+                                () => TradingV2.runTradingCycle(c)
+                            );
+                            state.hasOpenPosition = await Data.hasOpenPosition(c.id);
+                        } catch (err: any) {
+                            tradingCronLogger.error(`[TriggerManager:${c.id}] ✖ Error executing candle-close trade: ${err.message}`, { error: err });
+                        } finally {
+                            if (BulkSyncService.hasPendingChanges()) {
+                                await BulkSyncService.runFullSync();
+                            }
+                            state.isExecuting = false;
+                            endCycleLogging();
+                        }
+                    }
+                }
+            }
 
         } catch (err: any) {
             tradingCronLogger.error(`[TriggerManager:${c.id}] ✖ Failed to refresh triggers: ${err.message}`, { error: err });
@@ -173,11 +219,23 @@ export class TriggerManagerService {
     }
 
     /**
-     * Refresh triggers for all registered bots (e.g. at 1H candle boundaries)
+     * Called when a 1-hour candle boundary is crossed (e.g. at 10:15, 11:15, 12:15, 13:15, 14:15, 15:15 IST).
+     * Recalculates indicators for all bots and checks for candle-close crossover signals.
+     */
+    public async onHourCandleBoundary(boundaryTs: number): Promise<void> {
+        const timeStr = new Date(boundaryTs).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+        tradingCronLogger.info(`[TriggerManager] 🔔 Evaluating 1H candle boundary [${timeStr} IST] for ${this.botStates.size} bot(s)...`);
+        for (const botId of this.botStates.keys()) {
+            await this.refreshBotTriggers(botId, true);
+        }
+    }
+
+    /**
+     * Refresh triggers for all registered bots
      */
     public async refreshAllTriggers(): Promise<void> {
         for (const botId of this.botStates.keys()) {
-            await this.refreshBotTriggers(botId);
+            await this.refreshBotTriggers(botId, false);
         }
     }
 
