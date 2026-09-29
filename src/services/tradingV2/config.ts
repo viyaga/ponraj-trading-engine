@@ -23,6 +23,7 @@ export class TradingConfig {
         TIMEFRAME: '15minute',
 
         // ATR-14 strategy (3:00 PM - 3:15 PM)
+        ATR_STRATEGY_ENABLED: true,
         ATR_PERIOD: 14,
         TARGET_PROFIT_PCT: 10,    // legacy fallback
         STOP_LOSS_PCT: 5,     // legacy fallback

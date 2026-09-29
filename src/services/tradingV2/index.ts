@@ -395,7 +395,8 @@ export class TradingV2 {
             }
 
             // ── 4C. PRIORITY 3: ATR-14 Strategy (15-Minute 3:00 PM Window) ─
-            if (chosenSignal === 'NONE' && (is3pmTo315pmWindow() || env.isTesting)) {
+            const isAtrEnabled = c.ATR_STRATEGY_ENABLED ?? true;
+            if (chosenSignal === 'NONE' && isAtrEnabled && (is3pmTo315pmWindow() || env.isTesting)) {
                 if (env.isTesting && !is3pmTo315pmWindow()) {
                     tradingCronLogger.info(`${tag} ⚠️ [IS_TESTING=true] Overriding 3:00 PM - 3:15 PM window for ATR14 evaluation`);
                 }
@@ -465,6 +466,8 @@ export class TradingV2 {
                         skipReasons.push(...atrResult.skipReasons);
                     }
                 }
+            } else if (!isAtrEnabled) {
+                tradingCronLogger.info(`${tag} [ATR14 15m] Disabled in bot configuration`);
             }
 
             tradingCronLogger.info(

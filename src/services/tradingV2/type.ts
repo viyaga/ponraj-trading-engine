@@ -30,6 +30,7 @@ export interface ConfigType {
     TARGET_PROFIT_PCT: number;      // legacy: used as fallback if per-strategy TP not set
     STOP_LOSS_PCT: number;          // legacy: used as fallback if per-strategy SL not set
     MAX_LOSS_PER_DAY: number;       // max daily loss in ₹ (default: 2500)
+    ATR_STRATEGY_ENABLED?: boolean; // default: true (enables 3:00 PM - 3:15 PM ATR-14 strategy)
 
     // Per-Strategy TP / SL overrides
     ATR_STRATEGY_TP_PCT:     number; // ATR 15m strategy TP% (default: 10)

@@ -186,6 +186,7 @@ export class Data {
             TIMEFRAME: '15minute',
 
             // Strategy (3:00 PM - 3:15 PM)
+            ATR_STRATEGY_ENABLED: (bot as any).ATR_STRATEGY_ENABLED ?? defaults.ATR_STRATEGY_ENABLED ?? true,
             ATR_PERIOD:          bot.ATR_PERIOD         ?? defaults.ATR_PERIOD         ?? 14,
             TARGET_PROFIT_PCT:   bot.TARGET_PROFIT_PCT  ?? defaults.TARGET_PROFIT_PCT  ?? 7,
             STOP_LOSS_PCT:       bot.STOP_LOSS_PCT      ?? defaults.STOP_LOSS_PCT      ?? 5,
