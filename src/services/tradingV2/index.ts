@@ -194,6 +194,31 @@ export class TradingV2 {
                     (candleResult.skipReasons.length ? ` | Skip: [${candleResult.skipReasons.join('; ')}]` : '')
                 );
 
+                // ── IS_TESTING FORCE-SIGNAL OVERRIDE FOR CANDLE PATTERN ──
+                if (env.isTesting && candleResult.signal === 'NONE' && candles15m.length > 0) {
+                    const lastBar = candles15m[candles15m.length - 1];
+                    const isBullish = lastBar.close >= lastBar.open;
+                    const forcedSignal: TradingSignal = isBullish ? 'BULL' : 'BEAR';
+                    const forcedOption: OptionType    = isBullish ? 'CE' : 'PE';
+
+                    tradingCronLogger.warn(
+                        `${tag} ⚠️⚠️⚠️ [IS_TESTING OVERRIDE] CandlePattern (15m) returned NONE (no natural Hammer/Shooting Star).\n` +
+                        `${tag} ⚠️ Last 15m candle was ${isBullish ? 'GREEN (Bullish)' : 'RED (Bearish)'} → FORCING ${forcedSignal}/${forcedOption} test trade.\n` +
+                        `${tag} ⚠️ THIS SIGNAL IS SYNTHETIC FOR TESTING FULL ORDER & GTT PIPELINE (strictly 1 lot).\n` +
+                        `${tag} ⚠️ DISABLED IN PRODUCTION (IS_TESTING=false).`
+                    );
+
+                    candleResult.signal = forcedSignal;
+                    candleResult.optionType = forcedOption;
+                    candleResult.pattern = isBullish ? 'HAMMER' : 'SHOOTING_STAR';
+                    candleResult.score = 50;
+                    candleResult.signalCandleTimestamp = lastBar.timestamp;
+                    candleResult.reasons = [
+                        `[IS_TESTING FORCED] 15m candle pattern test order (${isBullish ? 'Hammer/CE' : 'ShootingStar/PE'})`
+                    ];
+                    candleResult.skipReasons = [];
+                }
+
                 if (candleResult.signal !== 'NONE') {
                     // Check duplicate-trade guard using signal candle timestamp
                     const alreadyTraded = candleResult.signalCandleTimestamp ? await TradeState.exists({
