@@ -74,24 +74,32 @@ export const refreshConfigsOnDemand = async (): Promise<ConfigType[]> => {
     return cachedConfigs;
 };
 
-const tradingCycleCronJob = (): void => {
+let isCycleRunning = false;
 
-    // Default schedule: every 1 minute during trading hours, Monday–Friday
-    cron.schedule(env.cronSchedule ?? "*/1 9-15 * * 1-5", async () => {
+/**
+ * Execute a single trading cycle run
+ */
+export const executeTradingCycle = async (): Promise<void> => {
+    if (isCycleRunning) {
+        tradingCronLogger.debug("[TradingCron] Previous cycle still executing — skipping tick.");
+        return;
+    }
+    isCycleRunning = true;
 
-        // ── 1. Market Hours Guard ───────────────────────────────────────────
-        if (!isNSETradingHours()) {
-            if (env.isTesting) {
-                tradingCronLogger.info("[TradingCron] ⚠️ [IS_TESTING=true] Overriding bot trading hours guard — running cycle in testing mode");
-            } else {
-                tradingCronLogger.debug("[TradingCron] Outside bot trading hours (9:30 AM - 3:15 PM IST) — skipping cycle");
-                return;
-            }
+    // ── 1. Market Hours Guard ───────────────────────────────────────────
+    if (!isNSETradingHours()) {
+        if (env.isTesting) {
+            tradingCronLogger.info("[TradingCron] ⚠️ [IS_TESTING=true] Overriding bot trading hours guard — running cycle in testing mode");
+        } else {
+            tradingCronLogger.debug("[TradingCron] Outside bot trading hours (9:30 AM - 3:15 PM IST) — skipping cycle");
+            isCycleRunning = false;
+            return;
         }
+    }
 
-        startCycleLogging();
-        try {
-            const now = new Date();
+    startCycleLogging();
+    try {
+        const now = new Date();
             const istMinutes = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
             const istMinute = istMinutes % 60;
 
@@ -269,12 +277,29 @@ const tradingCycleCronJob = (): void => {
                 await BulkSyncService.runFullSync();
                 lastBulkSyncTime = Date.now();
             }
+        } catch (err: any) {
+            tradingCronLogger.error(`[TradingCron] Uncaught error in executeTradingCycle: ${err.message}`, { error: err });
         } finally {
             endCycleLogging();
+            isCycleRunning = false;
         }
+    };
+
+const tradingCycleCronJob = (): void => {
+    // Schedule recurring cron
+    cron.schedule(env.cronSchedule ?? "*/1 9-15 * * 1-5", async () => {
+        await executeTradingCycle();
     });
 
     tradingCronLogger.info(`[CronScheduler] Optimized Cron scheduled: "${env.cronSchedule ?? "*/1 9-15 * * 1-5"}" (WebSocket + Threshold Guard Active)`);
+
+    // Immediate startup execution (after 2s delay for WebSocket auto-login & DB connection to stabilize)
+    setTimeout(async () => {
+        tradingCronLogger.info("[TradingCron] ➔ Triggering immediate startup trading cycle check...");
+        await executeTradingCycle().catch((err) => {
+            tradingCronLogger.error(`[TradingCron] Startup cycle failed: ${err.message}`, { error: err });
+        });
+    }, 2000);
 };
 
 export default tradingCycleCronJob;
