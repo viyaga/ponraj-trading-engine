@@ -50,13 +50,22 @@ export class TriggerManagerService {
      * Initialize trigger manager with active bot configs and attach to Angel One WebSocket stream
      */
     public async initialize(configs: ConfigType[]): Promise<void> {
-        tradingCronLogger.info(`[TriggerManager] ➔ Initializing Trigger Manager with ${configs.length} bot(s)...`);
+        const utConfigs = configs.filter(c => c.UT_BOT_ENABLED);
+        tradingCronLogger.info(`[TriggerManager] ➔ Initializing Trigger Manager with ${utConfigs.length} UT Bot(s) (out of ${configs.length} total bots)...`);
 
-        for (const cfg of configs) {
+        const activeUtIds = new Set(utConfigs.map(c => c.id));
+        for (const botId of Array.from(this.botStates.keys())) {
+            if (!activeUtIds.has(botId)) {
+                this.botStates.delete(botId);
+                tradingCronLogger.info(`[TriggerManager:${botId}] Removed from TriggerManager (UT Bot disabled or inactive).`);
+            }
+        }
+
+        for (const cfg of utConfigs) {
             await this.registerBot(cfg);
         }
 
-        if (!this.isInitialized) {
+        if (!this.isInitialized && utConfigs.length > 0) {
             const stream = AngelStreamService.getInstance();
             this.unsubscribeStream = stream.onTick((tick) => this.handleTick(tick));
             this.isInitialized = true;
@@ -68,6 +77,15 @@ export class TriggerManagerService {
      * Register or update a bot's trigger state
      */
     public async registerBot(cfg: ConfigType): Promise<void> {
+        // Only manage bots where UT Bot is enabled
+        if (!cfg.UT_BOT_ENABLED) {
+            if (this.botStates.has(cfg.id)) {
+                this.botStates.delete(cfg.id);
+                tradingCronLogger.info(`[TriggerManager:${cfg.id}] Removed from TriggerManager (UT Bot disabled).`);
+            }
+            return;
+        }
+
         const token = (cfg.INDEX === 'BANKNIFTY')
             ? TriggerManagerService.BANKNIFTY_TOKEN
             : TriggerManagerService.NIFTY_TOKEN;
@@ -109,6 +127,10 @@ export class TriggerManagerService {
         if (!state) return;
 
         const c = state.config;
+        if (!c.UT_BOT_ENABLED) {
+            this.botStates.delete(botId);
+            return;
+        }
         if (!c.API_KEY || !c.ACCESS_TOKEN) return;
 
         try {
@@ -219,13 +241,28 @@ export class TriggerManagerService {
     }
 
     /**
+     * Check if any bots are actively registered in TriggerManager
+     */
+    public hasActiveBots(): boolean {
+        return this.botStates.size > 0;
+    }
+
+    /**
+     * Get count of actively registered UT bots
+     */
+    public getActiveBotCount(): number {
+        return this.botStates.size;
+    }
+
+    /**
      * Called when a 1-hour candle boundary is crossed (e.g. at 10:15, 11:15, 12:15, 13:15, 14:15, 15:15 IST).
      * Recalculates indicators for all bots and checks for candle-close crossover signals.
      */
     public async onHourCandleBoundary(boundaryTs: number): Promise<void> {
+        if (this.botStates.size === 0) return;
         const timeStr = new Date(boundaryTs).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
         tradingCronLogger.info(`[TriggerManager] 🔔 Evaluating 1H candle boundary [${timeStr} IST] for ${this.botStates.size} bot(s)...`);
-        for (const botId of this.botStates.keys()) {
+        for (const botId of Array.from(this.botStates.keys())) {
             await this.refreshBotTriggers(botId, true);
         }
     }
@@ -253,6 +290,8 @@ export class TriggerManagerService {
      * Core event-driven tick handler
      */
     private async handleTick(tick: AngelStreamTick): Promise<void> {
+        if (this.botStates.size === 0) return;
+
         // Only evaluate during market trading hours
         if (!isNSEMarketOpen() && !env.isTesting) {
             return;
