@@ -41,6 +41,19 @@ export interface ConfigType {
     OPTION_MIN_PREMIUM: number;     // default: 120 (₹)
     OPTION_MAX_PREMIUM: number;     // default: 150 (₹)
 
+    // Candle Pattern Strategy (Hammer & Shooting Star Day Reversal - 3rd Priority)
+    CANDLE_PATTERN_STRATEGY_ENABLED?: boolean;   // default: true
+    CANDLE_PATTERN_STRATEGY_TP_PCT?: number;    // default: 10
+    CANDLE_PATTERN_STRATEGY_SL_PCT?: number;    // default: 10
+    HAMMER_MAX_BODY_PCT?: number;               // default: 0.35
+    HAMMER_MIN_LOWER_WICK_RATIO?: number;       // default: 2.0
+    HAMMER_MAX_UPPER_WICK_RATIO?: number;       // default: 0.5
+    SHOOTING_STAR_MAX_BODY_PCT?: number;         // default: 0.35
+    SHOOTING_STAR_MIN_UPPER_WICK_RATIO?: number; // default: 2.0
+    SHOOTING_STAR_MAX_LOWER_WICK_RATIO?: number; // default: 0.5
+    PATTERN_DAY_RANGE_PROXIMITY_PCT?: number;   // default: 30 (% of day's range)
+    PATTERN_MIN_RANGE_ATR_RATIO?: number;       // default: 0.35
+
     // UT Bot Alerts Strategy (1H Candle - 1st Priority)
     UT_BOT_ENABLED?: boolean;       // default: true
     UT_BOT_KEY_VALUE?: number;      // default: 1.0
@@ -295,6 +308,57 @@ export interface UTBotSignalResult {
     currentPos: number;
 }
 
+export type CandlePatternType =
+    | 'HAMMER'
+    | 'SHOOTING_STAR'
+    | 'PIN_BAR_BULLISH'
+    | 'PIN_BAR_BEARISH'
+    | 'BULLISH_ENGULFING'
+    | 'BEARISH_ENGULFING'
+    | 'MORNING_STAR'
+    | 'EVENING_STAR'
+    | 'DOJI'
+    | 'NONE';
+
+export interface CandleComponents {
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    body: number;
+    range: number;
+    upperWick: number;
+    lowerWick: number;
+    bodyPercent: number;
+    upperWickPercent: number;
+    lowerWickPercent: number;
+    isBullish: boolean;
+}
+
+export interface CandlePatternResult {
+    pattern: CandlePatternType;
+    isHammer: boolean;
+    isShootingStar: boolean;
+    components: CandleComponents;
+    description: string;
+}
+
+export interface CandlePatternSignalResult {
+    signal: TradingSignal;
+    optionType: OptionType | null;
+    pattern: CandlePatternType;
+    score: number;
+    atr: number;
+    dayHigh: number;
+    dayLow: number;
+    dayRange: number;
+    patternCandle?: Candle;
+    confirmingCandle?: Candle;
+    signalCandleTimestamp?: number;
+    reasons: string[];
+    skipReasons: string[];
+}
+
 /* ───────────────────────────────────────
    Active Bot (fetched from backend)
 ──────────────────────────────────────── */
@@ -320,10 +384,13 @@ export interface ActiveSubscribedBot {
     MAX_LOSS_PER_DAY: number;
 
     // Per-Strategy TP / SL overrides
-    ATR_STRATEGY_TP_PCT:     number;
-    ATR_STRATEGY_SL_PCT:     number;
-    UT_BOT_STRATEGY_TP_PCT:  number;
-    UT_BOT_STRATEGY_SL_PCT:  number;
+    ATR_STRATEGY_TP_PCT?:     number;
+    ATR_STRATEGY_SL_PCT?:     number;
+    UT_BOT_STRATEGY_TP_PCT?:  number;
+    UT_BOT_STRATEGY_SL_PCT?:  number;
+    CANDLE_PATTERN_STRATEGY_ENABLED?: boolean;
+    CANDLE_PATTERN_STRATEGY_TP_PCT?:  number;
+    CANDLE_PATTERN_STRATEGY_SL_PCT?:  number;
 
     // Option LTP Range Filter
     OPTION_MIN_PREMIUM: number;

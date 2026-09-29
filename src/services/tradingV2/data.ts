@@ -197,6 +197,11 @@ export class Data {
             UT_BOT_ATR_PERIOD:      bot.UT_BOT_ATR_PERIOD      ?? defaults.UT_BOT_ATR_PERIOD      ?? 10,
             UT_BOT_USE_HEIKIN_ASHI: bot.UT_BOT_USE_HEIKIN_ASHI ?? defaults.UT_BOT_USE_HEIKIN_ASHI ?? false,
 
+            // Candle Pattern Strategy (Hammer & Shooting Star Day Reversal - 3rd Priority)
+            CANDLE_PATTERN_STRATEGY_ENABLED: bot.CANDLE_PATTERN_STRATEGY_ENABLED ?? defaults.CANDLE_PATTERN_STRATEGY_ENABLED ?? true,
+            CANDLE_PATTERN_STRATEGY_TP_PCT:  bot.CANDLE_PATTERN_STRATEGY_TP_PCT  ?? defaults.CANDLE_PATTERN_STRATEGY_TP_PCT  ?? 10,
+            CANDLE_PATTERN_STRATEGY_SL_PCT:  bot.CANDLE_PATTERN_STRATEGY_SL_PCT  ?? defaults.CANDLE_PATTERN_STRATEGY_SL_PCT  ?? 10,
+
             // Trailing SL
             IS_TRAILING_SL_ENABLED: bot.IS_TRAILING_SL_ENABLED ?? defaults.IS_TRAILING_SL_ENABLED ?? true,
 

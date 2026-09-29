@@ -33,10 +33,23 @@ export class TradingConfig {
         ATR_STRATEGY_SL_PCT: 5,   // ATR 15m: exit when premium -5%
         UT_BOT_STRATEGY_TP_PCT: 20,  // UT Bot 1H: exit when premium +20%
         UT_BOT_STRATEGY_SL_PCT: 10,  // UT Bot 1H: exit when premium -10%
+        CANDLE_PATTERN_STRATEGY_TP_PCT: 10, // Candle Pattern 15m: exit when premium +10%
+        CANDLE_PATTERN_STRATEGY_SL_PCT: 10, // Candle Pattern 15m: exit when premium -10%
 
         // Option LTP Range Filter
         OPTION_MIN_PREMIUM: 120,   // ₹ — only trade options priced ≥120
         OPTION_MAX_PREMIUM: 150,   // ₹ — only trade options priced ≤150
+
+        // Candle Pattern Strategy (Hammer & Shooting Star Day Reversal - 3rd Priority)
+        CANDLE_PATTERN_STRATEGY_ENABLED: true,
+        HAMMER_MAX_BODY_PCT: 0.35,
+        HAMMER_MIN_LOWER_WICK_RATIO: 2.0,
+        HAMMER_MAX_UPPER_WICK_RATIO: 0.5,
+        SHOOTING_STAR_MAX_BODY_PCT: 0.35,
+        SHOOTING_STAR_MIN_UPPER_WICK_RATIO: 2.0,
+        SHOOTING_STAR_MAX_LOWER_WICK_RATIO: 0.5,
+        PATTERN_DAY_RANGE_PROXIMITY_PCT: 30, // within bottom/top 30% of day's range
+        PATTERN_MIN_RANGE_ATR_RATIO: 0.35,   // candle range >= 0.35 * ATR(14)
 
         // UT Bot Alerts Strategy (1H candle - 1st Priority)
         UT_BOT_ENABLED: true,

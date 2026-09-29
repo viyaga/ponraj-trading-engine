@@ -34,6 +34,7 @@ import {
     UT_BOT_TRADING_WINDOW_END_MIN,
 } from './strategies/atr14-strategy';
 import { UTBotStrategy } from './strategies/ut-bot-strategy';
+import { CandlePatternStrategy } from './strategies/candle-pattern-strategy';
 import { OptionSelectorService } from './option-selector.service';
 import { Data } from './data';
 import { TradeState } from '../../models/tradeState.model';
@@ -419,6 +420,53 @@ export class TradingV2 {
                 }
             }
 
+            // ── 4C. PRIORITY 3: Candle Pattern Strategy (Hammer Near Day Low / Shooting Star Near Day High - 15m) ──
+            const isCandlePatternEnabled = c.CANDLE_PATTERN_STRATEGY_ENABLED ?? true;
+            if (chosenSignal === 'NONE' && isCandlePatternEnabled) {
+                tradingCronLogger.info(`${tag} [CandlePattern 15m] Evaluating Hammer near Day Low / Shooting Star near Day High...`);
+                const candleResult = CandlePatternStrategy.evaluateSignal(
+                    candles15m,
+                    spotPrice,
+                    c,
+                    c.ATR_PERIOD ?? 14
+                );
+
+                tradingCronLogger.info(
+                    `${tag} [CandlePattern 15m] Result → Signal: ${candleResult.signal} | Option: ${candleResult.optionType ?? 'NONE'} | ` +
+                    `Pattern: ${candleResult.pattern} | Score: ${candleResult.score} | ATR: ${candleResult.atr.toFixed(1)} | ` +
+                    `DayHigh: ₹${candleResult.dayHigh.toFixed(1)} | DayLow: ₹${candleResult.dayLow.toFixed(1)} | DayRange: ₹${candleResult.dayRange.toFixed(1)} | ` +
+                    `Reasons: [${candleResult.reasons.join('; ') || 'None'}]` +
+                    (candleResult.skipReasons.length ? ` | Skip: [${candleResult.skipReasons.join('; ')}]` : '')
+                );
+
+                if (candleResult.signal !== 'NONE') {
+                    // Check duplicate-trade guard using signal candle timestamp
+                    const alreadyTraded = candleResult.signalCandleTimestamp ? await TradeState.exists({
+                        tradingBotId: c.id,
+                        signalCandleTimestamp: candleResult.signalCandleTimestamp,
+                    }) : null;
+
+                    if (alreadyTraded && !env.isTesting) {
+                        const candleTimeStr = candleResult.signalCandleTimestamp
+                            ? new Date(candleResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
+                            : 'unknown';
+                        const skipMsg = `CandlePattern (15m): Signal on candle [${candleTimeStr} IST] was already executed for bot ${c.id}`;
+                        skipReasons.push(skipMsg);
+                        tradingCronLogger.info(`${tag} ⏸️ [CandlePattern 15m] Candle [${candleTimeStr} IST] already traded — skipping duplicate`);
+                    } else {
+                        chosenSignal = candleResult.signal;
+                        chosenOptionType = candleResult.optionType;
+                        chosenATR = candleResult.atr;
+                        chosenScore = candleResult.score;
+                        chosenSignalCandleTimestamp = candleResult.signalCandleTimestamp ?? null;
+                        strategyName = 'CANDLE_PATTERN_15M';
+                        reasons = candleResult.reasons;
+                    }
+                } else if (candleResult.skipReasons.length) {
+                    skipReasons.push(...candleResult.skipReasons);
+                }
+            }
+
             tradingCronLogger.info(
                 `${tag} 🏁 Strategy Decision: Signal=${chosenSignal} | Direction=${chosenOptionType ?? 'NONE'} | ` +
                 `Strategy=${strategyName || 'NONE'} | Score=${chosenScore}`
@@ -469,9 +517,13 @@ export class TradingV2 {
             // ── 7. Resolve per-strategy TP / SL ─────────────────────────────
             const effectiveTP = strategyName === 'UT_BOT_1H'
                 ? (c.UT_BOT_STRATEGY_TP_PCT ?? c.TARGET_PROFIT_PCT)
+                : strategyName === 'CANDLE_PATTERN_15M'
+                ? (c.CANDLE_PATTERN_STRATEGY_TP_PCT ?? 10)
                 : (c.ATR_STRATEGY_TP_PCT    ?? c.TARGET_PROFIT_PCT);
             const effectiveSL = strategyName === 'UT_BOT_1H'
                 ? (c.UT_BOT_STRATEGY_SL_PCT ?? c.STOP_LOSS_PCT)
+                : strategyName === 'CANDLE_PATTERN_15M'
+                ? (c.CANDLE_PATTERN_STRATEGY_SL_PCT ?? 10)
                 : (c.ATR_STRATEGY_SL_PCT    ?? c.STOP_LOSS_PCT);
 
             tradingCronLogger.info(
