@@ -175,9 +175,56 @@ export class TradingV2 {
             let reasons: string[] = [];
             let skipReasons: string[] = [];
 
-            // ── 4A. PRIORITY 1: UT Bot Strategy (1-Hour Timeframe) ────────
+            // ── 4A. PRIORITY 1: Candle Pattern Strategy (Hammer Near Day Low / Shooting Star Near Day High - 15m) ──
+            const isCandlePatternEnabled = c.CANDLE_PATTERN_STRATEGY_ENABLED ?? true;
+            if (chosenSignal === 'NONE' && isCandlePatternEnabled) {
+                tradingCronLogger.info(`${tag} [CandlePattern 15m] Evaluating Hammer near Day Low / Shooting Star near Day High...`);
+                const candleResult = CandlePatternStrategy.evaluateSignal(
+                    candles15m,
+                    spotPrice,
+                    c,
+                    c.ATR_PERIOD ?? 14
+                );
+
+                tradingCronLogger.info(
+                    `${tag} [CandlePattern 15m] Result → Signal: ${candleResult.signal} | Option: ${candleResult.optionType ?? 'NONE'} | ` +
+                    `Pattern: ${candleResult.pattern} | Score: ${candleResult.score} | ATR: ${candleResult.atr.toFixed(1)} | ` +
+                    `DayHigh: ₹${candleResult.dayHigh.toFixed(1)} | DayLow: ₹${candleResult.dayLow.toFixed(1)} | DayRange: ₹${candleResult.dayRange.toFixed(1)} | ` +
+                    `Reasons: [${candleResult.reasons.join('; ') || 'None'}]` +
+                    (candleResult.skipReasons.length ? ` | Skip: [${candleResult.skipReasons.join('; ')}]` : '')
+                );
+
+                if (candleResult.signal !== 'NONE') {
+                    // Check duplicate-trade guard using signal candle timestamp
+                    const alreadyTraded = candleResult.signalCandleTimestamp ? await TradeState.exists({
+                        tradingBotId: c.id,
+                        signalCandleTimestamp: candleResult.signalCandleTimestamp,
+                    }) : null;
+
+                    if (alreadyTraded && !env.isTesting) {
+                        const candleTimeStr = candleResult.signalCandleTimestamp
+                            ? new Date(candleResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
+                            : 'unknown';
+                        const skipMsg = `CandlePattern (15m): Signal on candle [${candleTimeStr} IST] was already executed for bot ${c.id}`;
+                        skipReasons.push(skipMsg);
+                        tradingCronLogger.info(`${tag} ⏸️ [CandlePattern 15m] Candle [${candleTimeStr} IST] already traded — skipping duplicate`);
+                    } else {
+                        chosenSignal = candleResult.signal;
+                        chosenOptionType = candleResult.optionType;
+                        chosenATR = candleResult.atr;
+                        chosenScore = candleResult.score;
+                        chosenSignalCandleTimestamp = candleResult.signalCandleTimestamp ?? null;
+                        strategyName = 'CANDLE_PATTERN_15M';
+                        reasons = candleResult.reasons;
+                    }
+                } else if (candleResult.skipReasons.length) {
+                    skipReasons.push(...candleResult.skipReasons);
+                }
+            }
+
+            // ── 4B. PRIORITY 2: UT Bot Strategy (1-Hour Timeframe) ────────
             const isUtBotEnabled = c.UT_BOT_ENABLED ?? true;
-            if (isUtBotEnabled) {
+            if (chosenSignal === 'NONE' && isUtBotEnabled) {
                 if (!isUTBotTradingWindow(c) && !env.isTesting) {
                     const startH = c.UT_BOT_START_HOUR ?? UT_BOT_TRADING_WINDOW_START_HOUR;
                     const startM = c.UT_BOT_START_MIN  ?? UT_BOT_TRADING_WINDOW_START_MIN;
@@ -347,7 +394,7 @@ export class TradingV2 {
                 tradingCronLogger.info(`${tag} [UTBot 1H] Disabled in bot configuration`);
             }
 
-            // ── 4B. PRIORITY 2: ATR-14 Strategy (15-Minute 3:00 PM Window) ─
+            // ── 4C. PRIORITY 3: ATR-14 Strategy (15-Minute 3:00 PM Window) ─
             if (chosenSignal === 'NONE' && (is3pmTo315pmWindow() || env.isTesting)) {
                 if (env.isTesting && !is3pmTo315pmWindow()) {
                     tradingCronLogger.info(`${tag} ⚠️ [IS_TESTING=true] Overriding 3:00 PM - 3:15 PM window for ATR14 evaluation`);
@@ -417,53 +464,6 @@ export class TradingV2 {
                     } else if (atrResult.skipReasons.length) {
                         skipReasons.push(...atrResult.skipReasons);
                     }
-                }
-            }
-
-            // ── 4C. PRIORITY 3: Candle Pattern Strategy (Hammer Near Day Low / Shooting Star Near Day High - 15m) ──
-            const isCandlePatternEnabled = c.CANDLE_PATTERN_STRATEGY_ENABLED ?? true;
-            if (chosenSignal === 'NONE' && isCandlePatternEnabled) {
-                tradingCronLogger.info(`${tag} [CandlePattern 15m] Evaluating Hammer near Day Low / Shooting Star near Day High...`);
-                const candleResult = CandlePatternStrategy.evaluateSignal(
-                    candles15m,
-                    spotPrice,
-                    c,
-                    c.ATR_PERIOD ?? 14
-                );
-
-                tradingCronLogger.info(
-                    `${tag} [CandlePattern 15m] Result → Signal: ${candleResult.signal} | Option: ${candleResult.optionType ?? 'NONE'} | ` +
-                    `Pattern: ${candleResult.pattern} | Score: ${candleResult.score} | ATR: ${candleResult.atr.toFixed(1)} | ` +
-                    `DayHigh: ₹${candleResult.dayHigh.toFixed(1)} | DayLow: ₹${candleResult.dayLow.toFixed(1)} | DayRange: ₹${candleResult.dayRange.toFixed(1)} | ` +
-                    `Reasons: [${candleResult.reasons.join('; ') || 'None'}]` +
-                    (candleResult.skipReasons.length ? ` | Skip: [${candleResult.skipReasons.join('; ')}]` : '')
-                );
-
-                if (candleResult.signal !== 'NONE') {
-                    // Check duplicate-trade guard using signal candle timestamp
-                    const alreadyTraded = candleResult.signalCandleTimestamp ? await TradeState.exists({
-                        tradingBotId: c.id,
-                        signalCandleTimestamp: candleResult.signalCandleTimestamp,
-                    }) : null;
-
-                    if (alreadyTraded && !env.isTesting) {
-                        const candleTimeStr = candleResult.signalCandleTimestamp
-                            ? new Date(candleResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
-                            : 'unknown';
-                        const skipMsg = `CandlePattern (15m): Signal on candle [${candleTimeStr} IST] was already executed for bot ${c.id}`;
-                        skipReasons.push(skipMsg);
-                        tradingCronLogger.info(`${tag} ⏸️ [CandlePattern 15m] Candle [${candleTimeStr} IST] already traded — skipping duplicate`);
-                    } else {
-                        chosenSignal = candleResult.signal;
-                        chosenOptionType = candleResult.optionType;
-                        chosenATR = candleResult.atr;
-                        chosenScore = candleResult.score;
-                        chosenSignalCandleTimestamp = candleResult.signalCandleTimestamp ?? null;
-                        strategyName = 'CANDLE_PATTERN_15M';
-                        reasons = candleResult.reasons;
-                    }
-                } else if (candleResult.skipReasons.length) {
-                    skipReasons.push(...candleResult.skipReasons);
                 }
             }
 
