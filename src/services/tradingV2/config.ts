@@ -23,7 +23,7 @@ export class TradingConfig {
         TIMEFRAME: '15minute',
 
         // ATR-14 strategy (3:00 PM - 3:15 PM)
-        ATR_STRATEGY_ENABLED: true,
+        ATR_STRATEGY_ENABLED: false,
         ATR_PERIOD: 14,
         TARGET_PROFIT_PCT: 10,    // legacy fallback
         STOP_LOSS_PCT: 5,     // legacy fallback
@@ -41,7 +41,7 @@ export class TradingConfig {
         OPTION_MIN_PREMIUM: 120,   // ₹ — only trade options priced ≥120
         OPTION_MAX_PREMIUM: 150,   // ₹ — only trade options priced ≤150
 
-        // Candle Pattern Strategy (Hammer & Shooting Star Day Reversal - 3rd Priority)
+        // Candle Pattern Strategy (Hammer & Shooting Star Day Reversal - 1st Priority)
         CANDLE_PATTERN_STRATEGY_ENABLED: true,
         HAMMER_MAX_BODY_PCT: 0.35,
         HAMMER_MIN_LOWER_WICK_RATIO: 2.0,
@@ -52,8 +52,8 @@ export class TradingConfig {
         PATTERN_DAY_RANGE_PROXIMITY_PCT: 30, // within bottom/top 30% of day's range
         PATTERN_MIN_RANGE_ATR_RATIO: 0.35,   // candle range >= 0.35 * ATR(14)
 
-        // UT Bot Alerts Strategy (1H candle - 1st Priority)
-        UT_BOT_ENABLED: true,
+        // UT Bot Alerts Strategy (1H candle)
+        UT_BOT_ENABLED: false,
         UT_BOT_KEY_VALUE: 1.0,
         UT_BOT_ATR_PERIOD: 10,
         UT_BOT_USE_HEIKIN_ASHI: false,
