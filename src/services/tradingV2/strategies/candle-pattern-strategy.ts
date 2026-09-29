@@ -531,7 +531,23 @@ export class CandlePatternStrategy {
         }
 
         if (result.signal === 'NONE' && result.skipReasons.length === 0) {
-            result.skipReasons.push('No Hammer near Day Low or Shooting Star near Day High found on recent 15m candles');
+            const lastCandle = sorted[lastIdx];
+            const lastComp = computeCandleComponents(lastCandle);
+            const lastTimeStr = new Date(lastCandle.timestamp).toLocaleTimeString('en-IN', {
+                timeZone: 'Asia/Kolkata',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+            });
+            const lastColor = lastComp.isBullish ? '🟢 Green' : '🔴 Red';
+            const bodyPctStr = (lastComp.bodyPercent * 100).toFixed(1);
+            const lowerWickRatio = lastComp.body > 0 ? (lastComp.lowerWick / lastComp.body).toFixed(1) : 'inf';
+            const upperWickRatio = lastComp.body > 0 ? (lastComp.upperWick / lastComp.body).toFixed(1) : 'inf';
+            result.skipReasons.push(
+                `Last closed 15m candle [${lastTimeStr} IST] was ${lastColor} ` +
+                `(Body: ₹${lastComp.body.toFixed(1)} / ${bodyPctStr}%, Lower Wick: ${lowerWickRatio}x, Upper Wick: ${upperWickRatio}x) — ` +
+                `no Hammer near Day Low or Shooting Star near Day High detected`
+            );
         }
 
         return result;

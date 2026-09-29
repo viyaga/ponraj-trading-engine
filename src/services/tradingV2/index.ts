@@ -21,6 +21,7 @@ import {
 } from './type';
 import { KiteExchange, NIFTY_STEP, BANKNIFTY_STEP } from './kite-exchange';
 import { MarketDataService } from './market-data.service';
+import { AngelMarketDataService } from './angel-market-data.service';
 import {
     ATR14Strategy,
     getMinutesToMarketClose,
@@ -66,20 +67,31 @@ export class TradingV2 {
         const tag     = `[TradingCycle:${c.id}:${c.INDEX}]`;
         const istTimeStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true });
 
-        const utBotEntryMode = (c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false) ? '⏳ CANDLE CLOSE (wait for 1H bar to complete)' : '⚡ IMMEDIATE (live candle / mid-candle crossover)';
+        const isUtBotEnabled = c.UT_BOT_ENABLED !== false;
+        const isCandlePatternEnabled = c.CANDLE_PATTERN_STRATEGY_ENABLED !== false;
+        const isAtrEnabled = Boolean(c.ATR_STRATEGY_ENABLED);
+
+        const utBotEntryMode = isUtBotEnabled
+            ? ((c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false) ? '⏳ CANDLE CLOSE (wait for 1H bar to complete)' : '⚡ IMMEDIATE (live candle / mid-candle crossover)')
+            : '⚪ DISABLED';
+
         tradingCronLogger.info(
             `\n${tag} ╔══════════════════════════════════════════════════════════════════════════\n` +
             `${tag} ║ TRADING CYCLE START: ${cycleId}\n` +
             `${tag} ║ Time (IST):      ${istTimeStr}\n` +
-            `${tag} ║ Bot ID:          ${c.id}\n` +
-            `${tag} ║ Index:           ${c.INDEX}\n` +
-            `${tag} ║ Mode:            ${c.DRY_RUN ? '🧪 DRY RUN (Simulation Only)' : (env.isTesting ? '⚡ TEST MODE (Live Smallest Lot)' : '🚀 LIVE PRODUCTION')}\n` +
-            `${tag} ║ Market Open:     ${isNSEMarketOpen() ? '🟢 YES (Trading Window: 9:30 AM - 3:15 PM IST)' : '🔴 NO (Outside Window)'}\n` +
-            `${tag} ║ Order Config:    ${c.ORDER_TYPE} | ${c.PRODUCT} | Lots: ${c.NUMBER_OF_LOTS ?? 1} (LotSize: ${c.LOT_SIZE ?? 25})\n` +
-            `${tag} ║ Premium Target:  ₹${c.OPTION_MIN_PREMIUM}–₹${c.OPTION_MAX_PREMIUM} (${c.EXPIRY_TYPE})\n` +
-            `${tag} ║ Risk Limits:     Max Daily Loss: ₹${c.MAX_LOSS_PER_DAY ?? 2500} | Base TP: +${c.TARGET_PROFIT_PCT}% | Base SL: -${c.STOP_LOSS_PCT}%\n` +
-            `${tag} ║ UT Bot Entry:    ${utBotEntryMode}\n` +
-            `${tag} ║ UT Bot Window:   ${String(c.UT_BOT_START_HOUR ?? 10).padStart(2,'0')}:${String(c.UT_BOT_START_MIN ?? 15).padStart(2,'0')} – ${String(c.UT_BOT_END_HOUR ?? 15).padStart(2,'0')}:${String(c.UT_BOT_END_MIN ?? 15).padStart(2,'0')} IST | Skip Opening: ${c.UT_BOT_SKIP_OPENING_CANDLE ?? true}\n` +
+            `${tag} ║ Bot ID:          ${c.id} (${c.INDEX})\n` +
+            `${tag} ║ Execution Mode:  ${c.DRY_RUN ? '🧪 DRY RUN (Simulation Only)' : (env.isTesting ? '⚡ TEST MODE (Live Smallest Lot)' : '🚀 LIVE PRODUCTION')}\n` +
+            `${tag} ║ Market Window:   ${isNSEMarketOpen() ? '🟢 OPEN (9:30 AM – 3:15 PM IST)' : '🔴 CLOSED'}\n` +
+            `${tag} ╠══════════════════════════════════════════════════════════════════════════\n` +
+            `${tag} ║ ACTIVE STRATEGIES:\n` +
+            `${tag} ║  1. Candle Pattern (15m): ${isCandlePatternEnabled ? '🟢 ACTIVE (Hammer near Low / Shooting Star near High)' : '⚪ DISABLED'}\n` +
+            `${tag} ║  2. UT Bot (1H):          ${isUtBotEnabled ? `🟢 ACTIVE [${utBotEntryMode}]` : '⚪ DISABLED (0 REST calls)'}\n` +
+            `${tag} ║  3. ATR Strategy (15m):    ${isAtrEnabled ? '🟢 ACTIVE (3:00 – 3:15 PM Window)' : '⚪ DISABLED'}\n` +
+            `${tag} ╠══════════════════════════════════════════════════════════════════════════\n` +
+            `${tag} ║ RISK & EXECUTION RULES:\n` +
+            `${tag} ║  • Order / Product: ${c.ORDER_TYPE} | ${c.PRODUCT} | Lots: ${c.NUMBER_OF_LOTS ?? 1} (LotSize: ${c.LOT_SIZE ?? 25})\n` +
+            `${tag} ║  • Premium Window:  ₹${c.OPTION_MIN_PREMIUM}–₹${c.OPTION_MAX_PREMIUM} (${c.EXPIRY_TYPE})\n` +
+            `${tag} ║  • Risk Targets:    Max Loss: ₹${c.MAX_LOSS_PER_DAY ?? 2500} | Base TP: +${c.TARGET_PROFIT_PCT}% | Base SL: -${c.STOP_LOSS_PCT}%\n` +
             `${tag} ╚══════════════════════════════════════════════════════════════════════════`
         );
 
@@ -152,19 +164,28 @@ export class TradingV2 {
 
             const isUtBotEnabled = c.UT_BOT_ENABLED !== false;
 
+            const last15mComp = last15m ? {
+                body: Math.abs(last15m.close - last15m.open),
+                range: last15m.high - last15m.low,
+                isBullish: last15m.close >= last15m.open,
+                bodyPct: (last15m.high - last15m.low) > 0 ? (Math.abs(last15m.close - last15m.open) / (last15m.high - last15m.low)) * 100 : 0,
+            } : null;
+
             tradingCronLogger.info(
                 `${tag} 📊 Market Snapshot (${c.INDEX}):\n` +
                 `  Spot LTP:        ₹${spotPrice.toFixed(2)}\n` +
-                `  ── 15m Candles ──────────────────────────────────────\n` +
+                `  ── 15m Closed Candles ───────────────────────────────\n` +
                 `  Count:           ${candles15m.length} completed bars\n` +
                 (first15m ? `  First Bar:       ${fmtTs(first15m.timestamp)} IST | C: ₹${first15m.close.toFixed(2)}\n` : `  First Bar:       N/A\n`) +
-                (last15m  ? `  Latest Bar:      ${formatBar(last15m)}\n` : `  Latest Bar:      ⚠️ NO 15m CANDLES — ATR14 strategy disabled\n`) +
-                `  ── 1H Candles ───────────────────────────────────────\n` +
+                (last15m && last15mComp
+                    ? `  Latest Bar:      ${formatBar(last15m)} ${last15mComp.isBullish ? '🟢' : '🔴'} (Body: ₹${last15mComp.body.toFixed(1)} / ${last15mComp.bodyPct.toFixed(1)}% | Range: ₹${last15mComp.range.toFixed(1)})\n`
+                    : `  Latest Bar:      ⚠️ NO 15m CANDLES — ATR14 strategy disabled\n`) +
+                `  ── 1H Series ────────────────────────────────────────\n` +
                 (isUtBotEnabled
                     ? `  Count:           ${candles1h.length} bars (${(c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false) ? 'completed only' : 'completed + live'})\n` +
                       (first1h ? `  First Bar:       ${fmtTs(first1h.timestamp)} IST | C: ₹${first1h.close.toFixed(2)}\n` : `  First Bar:       N/A\n`) +
                       (last1h  ? `  Latest Bar:      ${formatBar(last1h)}\n` : `  Latest Bar:      ⚠️ NO 1H CANDLES — UT Bot disabled\n`)
-                    : `  Status:          Skipped (UT Bot strategy disabled)\n`) +
+                    : `  Status:          ⚪ Skipped (UT Bot strategy disabled — 0 REST calls)\n`) +
                 `  ─────────────────────────────────────────────────────`
             );
 
@@ -180,9 +201,8 @@ export class TradingV2 {
             let skipReasons: string[] = [];
 
             // ── 4A. PRIORITY 1: Candle Pattern Strategy (Hammer Near Day Low / Shooting Star Near Day High - 15m) ──
-            const isCandlePatternEnabled = c.CANDLE_PATTERN_STRATEGY_ENABLED ?? true;
             if (chosenSignal === 'NONE' && isCandlePatternEnabled) {
-                tradingCronLogger.info(`${tag} [CandlePattern 15m] Evaluating Hammer near Day Low / Shooting Star near Day High...`);
+                tradingCronLogger.info(`${tag} ➔ [Strategy 1/3] Candle Pattern (15m Reversal): Evaluating closed bars...`);
                 const candleResult = CandlePatternStrategy.evaluateSignal(
                     candles15m,
                     spotPrice,
@@ -190,12 +210,15 @@ export class TradingV2 {
                     c.ATR_PERIOD ?? 14
                 );
 
+                const hasPattern = candleResult.pattern !== 'NONE';
                 tradingCronLogger.info(
-                    `${tag} [CandlePattern 15m] Result → Signal: ${candleResult.signal} | Option: ${candleResult.optionType ?? 'NONE'} | ` +
-                    `Pattern: ${candleResult.pattern} | Score: ${candleResult.score} | ATR: ${candleResult.atr.toFixed(1)} | ` +
-                    `DayHigh: ₹${candleResult.dayHigh.toFixed(1)} | DayLow: ₹${candleResult.dayLow.toFixed(1)} | DayRange: ₹${candleResult.dayRange.toFixed(1)} | ` +
-                    `Reasons: [${candleResult.reasons.join('; ') || 'None'}]` +
-                    (candleResult.skipReasons.length ? ` | Skip: [${candleResult.skipReasons.join('; ')}]` : '')
+                    `${tag} ┌── Candle Pattern 15M Evaluation ──────────────────────────────────\n` +
+                    `${tag} │ Day Context:     Day High: ₹${candleResult.dayHigh.toFixed(2)} | Day Low: ₹${candleResult.dayLow.toFixed(2)} | Range: ₹${candleResult.dayRange.toFixed(2)} | ATR(14): ${candleResult.atr.toFixed(2)}\n` +
+                    `${tag} │ Spot LTP:        ₹${spotPrice.toFixed(2)}\n` +
+                    `${tag} │ Pattern Status:  ${hasPattern ? `🎯 ${candleResult.pattern} DETECTED` : '⚪ No Hammer / Shooting Star'}\n` +
+                    `${tag} │ Signal Outcome:  ${candleResult.signal !== 'NONE' ? `🟢 ${candleResult.signal} (${candleResult.optionType})` : '⏸️ NONE'}\n` +
+                    `${tag} │ Evaluation Info: ${candleResult.reasons.length ? candleResult.reasons.join(' | ') : (candleResult.skipReasons.join(' | ') || 'No setup')}\n` +
+                    `${tag} └──────────────────────────────────────────────────────────────────`
                 );
 
                 // ── IS_TESTING FORCE-SIGNAL OVERRIDE FOR CANDLE PATTERN ──
@@ -520,7 +543,12 @@ export class TradingV2 {
 
             // ── 6. Filter checks (Open position, daily loss, signal present) ──
             if (chosenSignal === 'NONE' || !chosenOptionType) {
-                tradingCronLogger.info(`${tag} ⏹️ Cycle finished: No trade action (Signal: NONE for ${c.INDEX}).`);
+                const next15mBoundary = AngelMarketDataService.candleBoundary15m(Date.now()) + 15 * 60 * 1000;
+                const next15mStr = new Date(next15mBoundary).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+                tradingCronLogger.info(
+                    `${tag} ⏹️ Cycle finished: No trade action taken (Signal: NONE for ${c.INDEX}).\n` +
+                    `${tag} ⏳ Next candle close evaluation: [${next15mStr} IST] | Live WebSocket accumulating ticks in background.`
+                );
                 return;
             }
             if (hasOpenPos) {

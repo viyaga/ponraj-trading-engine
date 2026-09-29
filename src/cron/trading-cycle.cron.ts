@@ -202,6 +202,9 @@ export const executeTradingCycle = async (): Promise<void> => {
                 const next15mBoundary = AngelMarketDataService.candleBoundary15m(Date.now()) + 15 * 60 * 1000;
                 const next15mStr = new Date(next15mBoundary).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
 
+                const currentIstStr = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+                const minsLeft = Math.max(0, Math.ceil((next15mBoundary - Date.now()) / 60000));
+
                 let candleInfo: string;
                 if (hasUtBotActive) {
                     const live1h = niftyLtp ? LiveCandleBuilder.getLive1hCandle('99926000', niftyLtp) : null;
@@ -213,13 +216,13 @@ export const executeTradingCycle = async (): Promise<void> => {
                     const live15m = niftyLtp ? LiveCandleBuilder.getLive15mCandle('99926000', niftyLtp) : null;
                     const barTime = live15m ? new Date(live15m.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) : 'N/A';
                     candleInfo = live15m
-                        ? `15m Bar [${barTime} IST] O: ₹${live15m.open.toFixed(1)} H: ₹${live15m.high.toFixed(1)} L: ₹${live15m.low.toFixed(1)} C: ₹${live15m.close.toFixed(1)} (Next close: ${next15mStr} IST)`
+                        ? `15m Forming Bar [${barTime} IST] O: ₹${live15m.open.toFixed(2)} H: ₹${live15m.high.toFixed(2)} L: ₹${live15m.low.toFixed(2)} C: ₹${live15m.close.toFixed(2)}`
                         : 'Forming';
                 }
 
                 tradingCronLogger.info(
-                    `[TradingCron] ⚡ STREAM ACTIVE: Spot: ₹${niftyLtp ? niftyLtp.toFixed(2) : 'Awaiting tick'} | ` +
-                    `${candleInfo} | Bots: ${cachedConfigs.length} | Open Pos: 0 | Waiting for next candle close`
+                    `[TradingCron] ⚡ STREAM HEARTBEAT [${currentIstStr} IST] | Spot: ₹${niftyLtp ? niftyLtp.toFixed(2) : 'Awaiting tick'} | ` +
+                    `${candleInfo} | Next Close: ${next15mStr} IST (in ~${minsLeft}m) | Open Pos: 0`
                 );
 
                 // Sync with backend ONLY if there are pending trade changes
@@ -253,8 +256,22 @@ export const executeTradingCycle = async (): Promise<void> => {
                             ? '15M_CANDLE_CLOSE'
                             : 'STRATEGY_POLL';
 
+            const nowIstStr = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+            const boundary15mStr = new Date(current15mBoundary).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+            const triggerReason = hasOpenPos
+                ? '🔍 Active Position Monitoring (Trailing Stop / Target check)'
+                : isInitialRun
+                    ? '🚀 Engine Startup Boot Cycle'
+                    : !isStreamConnected
+                        ? '⚠️ WebSocket Stream Disconnected (Fallback Polling)'
+                        : isNew15mBoundary
+                            ? `🔔 15M Candle Boundary [${boundary15mStr} IST] — Closed Bar Evaluation`
+                            : '⚡ On-Demand / Heartbeat Strategy Scan';
+
             tradingCronLogger.info(`${"=".repeat(80)}`);
-            tradingCronLogger.info(`[TradingCron] ========== CYCLE START (Mode: ${mode}) ==========`);
+            tradingCronLogger.info(`[TradingCron] 🚀 CYCLE START: ${mode} [${nowIstStr} IST]`);
+            tradingCronLogger.info(`[TradingCron] Trigger Reason:  ${triggerReason}`);
+            tradingCronLogger.info(`[TradingCron] Configured Bots: ${cachedConfigs.length} (Index: ${cachedConfigs.map(c => c.INDEX).join(', ')})`);
             tradingCronLogger.info(`${"=".repeat(80)}`);
 
             TradingV2.clearCaches();
@@ -294,9 +311,12 @@ export const executeTradingCycle = async (): Promise<void> => {
                 errorLogger.error("[TradingCron] Cron cycle failed", error);
             } finally {
                 const duration = Date.now() - startTime;
+                const next15mTs = current15mBoundary + 15 * 60 * 1000;
+                const next15mStr = new Date(next15mTs).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
                 tradingCronLogger.info(`${"=".repeat(80)}`);
-                tradingCronLogger.info("[TradingCron] ========== CYCLE COMPLETE ==========");
-                tradingCronLogger.info(`[TradingCron] Processed: ${totalProcessed} | ✓ ${totalSucceeded} | ✗ ${totalFailed} | Duration: ${(duration / 1000).toFixed(2)}s`);
+                tradingCronLogger.info(`[TradingCron] 🏁 CYCLE COMPLETE: ${mode}`);
+                tradingCronLogger.info(`[TradingCron] Results: Processed: ${totalProcessed} | Succeeded: ${totalSucceeded} | Failed: ${totalFailed} | Duration: ${(duration / 1000).toFixed(2)}s`);
+                tradingCronLogger.info(`[TradingCron] Next 15M Candle Close: ${next15mStr} IST (Live tick accumulation in progress)`);
                 tradingCronLogger.info(`${"=".repeat(80)}`);
 
                 await BulkSyncService.runFullSync();
