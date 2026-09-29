@@ -383,6 +383,7 @@ export interface ActiveSubscribedBot {
     TARGET_PROFIT_PCT: number;
     STOP_LOSS_PCT: number;
     MAX_LOSS_PER_DAY: number;
+    ATR_STRATEGY_ENABLED?: boolean;
 
     // Per-Strategy TP / SL overrides
     ATR_STRATEGY_TP_PCT?:     number;
