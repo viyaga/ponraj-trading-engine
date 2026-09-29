@@ -7,8 +7,9 @@ export class LiveCandleBuilder {
     // Current accumulating live candles: token -> Candle
     private static live1hMap = new Map<string, Candle>();
     private static live15mMap = new Map<string, Candle>();
-    // Last completed 15m candle (archived when boundary rolls): token -> Candle
+    // Last completed candles (archived when boundary rolls): token -> Candle
     private static lastCompleted15mMap = new Map<string, Candle>();
+    private static lastCompleted1hMap  = new Map<string, Candle>();
 
     /**
      * Process incoming WebSocket tick and update forming 15m and 1H candles
@@ -21,9 +22,16 @@ export class LiveCandleBuilder {
         const candle1h = this.live1hMap.get(token);
 
         if (!candle1h || candle1h.timestamp !== boundary1h) {
-            // If previous 1H candle existed and rolled over, persist to DB
+            // If previous 1H candle existed and rolled over, persist to DB and archive in memory
             if (candle1h && candle1h.timestamp < boundary1h) {
-                CandleStorageService.saveCandles(token, '60minute', [{ ...candle1h }]).catch(() => {});
+                const completed = { ...candle1h };
+                this.lastCompleted1hMap.set(token, completed);
+                CandleStorageService.saveCandles(token, '60minute', [completed]).catch(() => {});
+                const prevTimeStr = new Date(candle1h.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+                tradingCronLogger.info(
+                    `[LiveCandleBuilder] ✔ 1H candle completed [${prevTimeStr} IST] | ` +
+                    `O: ₹${candle1h.open.toFixed(2)} H: ₹${candle1h.high.toFixed(2)} L: ₹${candle1h.low.toFixed(2)} C: ₹${candle1h.close.toFixed(2)}`
+                );
             }
 
             const timeStr = new Date(boundary1h).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
@@ -168,9 +176,18 @@ export class LiveCandleBuilder {
         return c ? { ...c } : null;
     }
 
+    /**
+     * Get the last completed 1H candle formed from live WebSocket stream
+     */
+    public static getLastCompleted1hCandle(token: string): Candle | null {
+        const c = this.lastCompleted1hMap.get(token);
+        return c ? { ...c } : null;
+    }
+
     public static clear(): void {
         this.live1hMap.clear();
         this.live15mMap.clear();
         this.lastCompleted15mMap.clear();
+        this.lastCompleted1hMap.clear();
     }
 }

@@ -48,9 +48,9 @@ export class AngelMarketDataService {
 
     // Rate limit & Concurrency Mutex: Angel One enforces max 3 req/sec across the client account,
     // and burst/concurrent requests trigger HTTP 403 "Access denied because of exceeding access rate".
-    // We enforce sequential execution with a 650ms minimum spacing between requests.
+    // We enforce sequential execution with a 1200ms minimum spacing between requests to stay safely below rate limits.
     private static lastHistoricalApiCallTime = 0;
-    private static readonly HISTORICAL_MIN_INTERVAL_MS = 650;
+    private static readonly HISTORICAL_MIN_INTERVAL_MS = 1200;
     private static historicalApiQueue: Promise<void> = Promise.resolve();
 
     // In-flight request deduplication map to prevent multiple concurrent requests for the same instrument & interval
@@ -420,6 +420,45 @@ export class AngelMarketDataService {
             return cached.candles;
         }
 
+        // ── 4. NEW CANDLE PERIOD: check LiveCandleBuilder / DB before hitting REST ──
+        const prevCompletedBoundary = boundary - this.FIFTEEN_MIN_MS;
+        if (cached && cached.candles.length > 0) {
+            // A. Check if the latest candle in cache already covers the completed bar
+            const lastCachedTs = cached.candles[cached.candles.length - 1]?.timestamp ?? 0;
+            if (lastCachedTs >= prevCompletedBoundary) {
+                cached.lastCandleBoundary = boundary;
+                tradingCronLogger.debug(
+                    `[AngelMarketDataService] 15m cache already covers completed bar (${new Date(lastCachedTs).toISOString()}) — updating boundary to ${new Date(boundary).toISOString()}`
+                );
+                return cached.candles;
+            }
+
+            // B. Check if LiveCandleBuilder captured the newly completed 15m candle from live WebSocket stream
+            const streamCandle = LiveCandleBuilder.getLastCompleted15mCandle(symbolToken);
+            if (streamCandle && streamCandle.timestamp >= prevCompletedBoundary && streamCandle.timestamp < boundary) {
+                const merged = this.mergeCandles(cached.candles, [streamCandle]);
+                this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
+                CandleStorageService.saveCandles(symbolToken, '15minute', [streamCandle]).catch(() => {});
+                tradingCronLogger.info(
+                    `[AngelMarketDataService] ⚡ Using LiveCandleBuilder completed 15m candle [${new Date(streamCandle.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST] ` +
+                    `(O: ₹${streamCandle.open.toFixed(2)} H: ₹${streamCandle.high.toFixed(2)} L: ₹${streamCandle.low.toFixed(2)} C: ₹${streamCandle.close.toFixed(2)}) — total ${merged.length} completed candles (0 REST calls)`
+                );
+                return merged;
+            }
+
+            // C. Check if MongoDB has the completed candle
+            const dbRecent = await CandleStorageService.getCandles(symbolToken, '15minute', 5);
+            const dbCompleted = dbRecent.find(c => c.timestamp >= prevCompletedBoundary && c.timestamp < boundary);
+            if (dbCompleted) {
+                const merged = this.mergeCandles(cached.candles, [dbCompleted]);
+                this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
+                tradingCronLogger.info(
+                    `[AngelMarketDataService] ⚡ Using MongoDB completed 15m candle [${new Date(dbCompleted.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST] — total ${merged.length} completed candles (0 REST calls)`
+                );
+                return merged;
+            }
+        }
+
         const isColdStart   = !cached || cached.candles.length === 0;
         const lookbackDays  = isColdStart ? this.BOOTSTRAP_DAYS_15M : 0;
         const lookbackMs    = isColdStart
@@ -430,7 +469,7 @@ export class AngelMarketDataService {
         const to   = new Date(nowMs);
 
         tradingCronLogger.info(
-            `[AngelMarketDataService] 15m cache ${isColdStart ? 'COLD START' : 'NEW CANDLE'} — ` +
+            `[AngelMarketDataService] 15m cache ${isColdStart ? 'COLD START' : 'NEW CANDLE (REST FALLBACK)'} — ` +
             `fetching ${isColdStart ? `last ${lookbackDays} days` : `last ${this.INCREMENTAL_PERIODS_15M} periods (${this.INCREMENTAL_PERIODS_15M * 15}m)`} ` +
             `for ${indexName} | prev boundary: ${cached ? new Date(cached.lastCandleBoundary).toISOString() : 'none'} → new: ${new Date(boundary).toISOString()}`
         );
@@ -633,6 +672,45 @@ export class AngelMarketDataService {
             return cached.candles;
         }
 
+        // ── 4. NEW CANDLE PERIOD: check LiveCandleBuilder / DB before hitting REST ──
+        const prev1hBoundary = boundary - this.ONE_HOUR_MS;
+        if (cached && cached.candles.length > 0) {
+            // A. Check if the latest candle in cache already covers the completed bar
+            const lastCachedTs = cached.candles[cached.candles.length - 1]?.timestamp ?? 0;
+            if (lastCachedTs >= prev1hBoundary) {
+                cached.lastCandleBoundary = boundary;
+                tradingCronLogger.debug(
+                    `[AngelMarketDataService] 1h cache already covers completed bar (${new Date(lastCachedTs).toISOString()}) — updating boundary to ${new Date(boundary).toISOString()}`
+                );
+                return cached.candles;
+            }
+
+            // B. Check if LiveCandleBuilder captured the newly completed 1H candle from live WebSocket stream
+            const streamCandle = LiveCandleBuilder.getLastCompleted1hCandle(symbolToken);
+            if (streamCandle && streamCandle.timestamp >= prev1hBoundary && streamCandle.timestamp < boundary) {
+                const merged = this.mergeCandles(cached.candles, [streamCandle]);
+                this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
+                CandleStorageService.saveCandles(symbolToken, '60minute', [streamCandle]).catch(() => {});
+                tradingCronLogger.info(
+                    `[AngelMarketDataService] ⚡ Using LiveCandleBuilder completed 1h candle [${new Date(streamCandle.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST] ` +
+                    `(O: ₹${streamCandle.open.toFixed(2)} H: ₹${streamCandle.high.toFixed(2)} L: ₹${streamCandle.low.toFixed(2)} C: ₹${streamCandle.close.toFixed(2)}) — total ${merged.length} completed candles (0 REST calls)`
+                );
+                return merged;
+            }
+
+            // C. Check if MongoDB has the completed candle
+            const dbRecent = await CandleStorageService.getCandles(symbolToken, '60minute', 5);
+            const dbCompleted = dbRecent.find(c => c.timestamp >= prev1hBoundary && c.timestamp < boundary);
+            if (dbCompleted) {
+                const merged = this.mergeCandles(cached.candles, [dbCompleted]);
+                this.candleCache.set(cacheKey, { candles: merged, lastCandleBoundary: boundary });
+                tradingCronLogger.info(
+                    `[AngelMarketDataService] ⚡ Using MongoDB completed 1h candle [${new Date(dbCompleted.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })} IST] — total ${merged.length} completed candles (0 REST calls)`
+                );
+                return merged;
+            }
+        }
+
         const isColdStart  = !cached || cached.candles.length === 0;
         const lookbackMs   = isColdStart
             ? this.BOOTSTRAP_DAYS_1H * 24 * 60 * 60 * 1000
@@ -642,7 +720,7 @@ export class AngelMarketDataService {
         const to   = new Date(nowMs);
 
         tradingCronLogger.info(
-            `[AngelMarketDataService] 1h cache ${isColdStart ? 'COLD START' : 'NEW CANDLE'} — ` +
+            `[AngelMarketDataService] 1h cache ${isColdStart ? 'COLD START' : 'NEW CANDLE (REST FALLBACK)'} — ` +
             `fetching ${isColdStart ? `last ${this.BOOTSTRAP_DAYS_1H} days` : `last ${this.INCREMENTAL_PERIODS_1H} periods (${this.INCREMENTAL_PERIODS_1H}h)`} ` +
             `for ${indexName} | prev boundary: ${cached ? new Date(cached.lastCandleBoundary).toISOString() : 'none'} → new: ${new Date(boundary).toISOString()}`
         );

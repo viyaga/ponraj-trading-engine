@@ -32,6 +32,7 @@ const BULK_SYNC_INTERVAL = 5 * 60 * 1000;
 // ── Candle Boundary Trackers ────────────────────────────────────────────────
 let lastRefreshed1hBoundary = 0;
 let lastRefreshed15mBoundary = 0;
+let isInitialStartupCyclePending = true;
 
 /**
  * Manually invalidate bot config cache (e.g., when called from admin API)
@@ -169,34 +170,56 @@ export const executeTradingCycle = async (): Promise<void> => {
 
             // ── 5. Strategy Execution Check ──────────────────────────────────────
             // Check if any bots need cycle execution:
-            // - Any bot with UT_BOT_ENABLED === false (not guarded by TriggerManagerService real-time stream!)
-            // - Any bot on a completed 15m candle boundary (for Candle Pattern Strategy)
-            // - Any bot with ATR_STRATEGY_ENABLED in the 3:00 PM – 3:15 PM window
-            const hasNonUtGuardedBots = cachedConfigs.some(c => !c.UT_BOT_ENABLED);
-            const hasCandlePatternBots = cachedConfigs.some(c => c.CANDLE_PATTERN_STRATEGY_ENABLED !== false);
+            // - Initial startup cycle (runs once after boot to evaluate current bar)
+            // - Active open positions exist (monitored every tick for trailing SL & targets)
+            // - Stream disconnected (fallback polling)
+            // - Completed 15m candle boundary crossed (for Candle Pattern Strategy)
+            // - Completed 1h candle boundary crossed for UT Bot
+            // - ATR Strategy active in 3:00 PM – 3:15 PM window
+            // - Any generic bots that don't have UT Bot or Candle Pattern strategy
+            const isInitialRun = isInitialStartupCyclePending;
+            isInitialStartupCyclePending = false;
+
+            const hasCandlePatternBotsToEvaluate = isNew15mBoundary && cachedConfigs.some(c => c.CANDLE_PATTERN_STRATEGY_ENABLED !== false);
+            const hasUtBoundaryBotsToEvaluate = (current1hBoundary > lastRefreshed1hBoundary) && cachedConfigs.some(c => c.UT_BOT_ENABLED !== false);
             const hasAtrStrategyBots = is3pmTo315pmWindow() && cachedConfigs.some(c => c.ATR_STRATEGY_ENABLED);
+            const hasGenericPollBots = cachedConfigs.some(c => !c.UT_BOT_ENABLED && c.CANDLE_PATTERN_STRATEGY_ENABLED === false && !c.ATR_STRATEGY_ENABLED);
 
             const needsCycleRun =
+                isInitialRun ||
                 hasOpenPos ||
                 !isStreamConnected ||
-                hasNonUtGuardedBots ||
-                (isNew15mBoundary && hasCandlePatternBots) ||
+                hasCandlePatternBotsToEvaluate ||
+                hasUtBoundaryBotsToEvaluate ||
                 hasAtrStrategyBots ||
-                env.isTesting;
+                hasGenericPollBots;
 
             // ── 6. Efficiency Guard: Real-Time Stream vs Fallback Polling ────────
-            // If NO bot needs standard cycle execution AND stream is actively guarding UT Bot:
+            // If NO bot needs standard cycle execution AND stream is actively guarding:
             if (!needsCycleRun) {
                 const niftyLtp = AngelStreamService.getLtp('99926000');
-                const liveCandle = niftyLtp ? LiveCandleBuilder.getLive1hCandle('99926000', niftyLtp) : null;
-                const barTime = liveCandle ? new Date(liveCandle.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) : 'N/A';
-                const candleInfo = liveCandle
-                    ? `1H Bar [${barTime} IST] O: ₹${liveCandle.open.toFixed(1)} H: ₹${liveCandle.high.toFixed(1)} L: ₹${liveCandle.low.toFixed(1)} C: ₹${liveCandle.close.toFixed(1)}`
-                    : 'Forming';
+                const hasUtBotActive = cachedConfigs.some(c => c.UT_BOT_ENABLED !== false);
+                const next15mBoundary = AngelMarketDataService.candleBoundary15m(Date.now()) + 15 * 60 * 1000;
+                const next15mStr = new Date(next15mBoundary).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+
+                let candleInfo: string;
+                if (hasUtBotActive) {
+                    const live1h = niftyLtp ? LiveCandleBuilder.getLive1hCandle('99926000', niftyLtp) : null;
+                    const barTime = live1h ? new Date(live1h.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) : 'N/A';
+                    candleInfo = live1h
+                        ? `1H Bar [${barTime} IST] O: ₹${live1h.open.toFixed(1)} H: ₹${live1h.high.toFixed(1)} L: ₹${live1h.low.toFixed(1)} C: ₹${live1h.close.toFixed(1)}`
+                        : 'Forming';
+                } else {
+                    const live15m = niftyLtp ? LiveCandleBuilder.getLive15mCandle('99926000', niftyLtp) : null;
+                    const barTime = live15m ? new Date(live15m.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) : 'N/A';
+                    candleInfo = live15m
+                        ? `15m Bar [${barTime} IST] O: ₹${live15m.open.toFixed(1)} H: ₹${live15m.high.toFixed(1)} L: ₹${live15m.low.toFixed(1)} C: ₹${live15m.close.toFixed(1)} (Next close: ${next15mStr} IST)`
+                        : 'Forming';
+                }
 
                 tradingCronLogger.info(
                     `[TradingCron] ⚡ STREAM ACTIVE: Spot: ₹${niftyLtp ? niftyLtp.toFixed(2) : 'Awaiting tick'} | ` +
-                    `${candleInfo} | Bots: ${cachedConfigs.length} (UT Guarded: ${TriggerManagerService.getInstance().getActiveBotCount()}) | Open Pos: 0 | Threshold Guard Active`
+                    `${candleInfo} | Bots: ${cachedConfigs.length} | Open Pos: 0 | Waiting for next candle close`
                 );
 
                 // Sync with backend ONLY if there are pending trade changes
@@ -222,11 +245,13 @@ export const executeTradingCycle = async (): Promise<void> => {
 
             const mode = hasOpenPos
                 ? 'POSITION_MONITOR'
-                : !isStreamConnected
-                    ? 'FALLBACK_POLL'
-                    : isNew15mBoundary
-                        ? '15M_CANDLE_CLOSE'
-                        : 'STRATEGY_POLL';
+                : isInitialRun
+                    ? 'STARTUP_EVALUATION'
+                    : !isStreamConnected
+                        ? 'FALLBACK_POLL'
+                        : isNew15mBoundary
+                            ? '15M_CANDLE_CLOSE'
+                            : 'STRATEGY_POLL';
 
             tradingCronLogger.info(`${"=".repeat(80)}`);
             tradingCronLogger.info(`[TradingCron] ========== CYCLE START (Mode: ${mode}) ==========`);

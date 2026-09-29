@@ -31,9 +31,7 @@ export class MarketDataService {
     static clearCaches(): void {
         // Clear price cache every minute to fetch fresh LTP
         this.priceCache.clear();
-        // Clear AngelMarketDataService cache as well
-        AngelMarketDataService.clearCache();
-        tradingCronLogger.debug('[MarketDataService] Intra-cycle cache reset (Spot LTP refreshed; AngelMarketDataService cache cleared)');
+        tradingCronLogger.debug('[MarketDataService] Intra-cycle spot price cache reset (LTP refreshed)');
     }
 
     /**
@@ -179,11 +177,12 @@ export class MarketDataService {
     ): Promise<FetchedMarketData | null> {
         const tag = `[MarketData:${c.id}:${c.INDEX}]`;
         try {
-            const tradeOnClose = c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false; // default true
+            const isUtBotEnabled = c.UT_BOT_ENABLED !== false;
+            const tradeOnClose   = c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false; // default true
 
             logger.info(
-                `${tag} ➤ Starting market data fetch (15m, 1h, spot) | ` +
-                `UT entry mode: ${tradeOnClose ? '⏳ CANDLE CLOSE' : '⚡ IMMEDIATE (live candle)'}`
+                `${tag} ➤ Starting market data fetch (15m, spot${isUtBotEnabled ? ', 1h' : ''}) | ` +
+                (isUtBotEnabled ? `UT entry mode: ${tradeOnClose ? '⏳ CANDLE CLOSE' : '⚡ IMMEDIATE (live candle)'}` : 'Candle Pattern 15m mode')
             );
             const startTime = Date.now();
 
@@ -191,19 +190,28 @@ export class MarketDataService {
             const candles15m = await this.get15mCandles(kite, c.INDEX);
             const spotPrice  = await this.getSpotPrice(kite, c.INDEX);
 
-            // For the 1H series: completed candles only (CANDLE_CLOSE) or include the live forming candle (IMMEDIATE)
-            const candles1h = tradeOnClose
-                ? await this.get1hCandles(kite, c.INDEX)
-                : await this.get1hCandlesWithLive(kite, c.INDEX, spotPrice);
+            // Fetch 1H candles ONLY if UT Bot is enabled
+            let candles1h: Candle[] = [];
+            if (isUtBotEnabled) {
+                candles1h = tradeOnClose
+                    ? await this.get1hCandles(kite, c.INDEX)
+                    : await this.get1hCandlesWithLive(kite, c.INDEX, spotPrice);
+            }
 
             const elapsed = Date.now() - startTime;
             logger.info(
                 `${tag} ✔ Market data fetched in ${elapsed}ms: ` +
-                `15m=${candles15m.length} candles, 1h=${candles1h.length} candles (${tradeOnClose ? 'closed' : 'live+closed'}), Spot=₹${spotPrice.toFixed(2)}`
+                `15m=${candles15m.length} candles` +
+                (isUtBotEnabled ? `, 1h=${candles1h.length} candles (${tradeOnClose ? 'closed' : 'live+closed'})` : ', 1h=skipped (UT Bot disabled)') +
+                `, Spot=₹${spotPrice.toFixed(2)}`
             );
 
-            if (!candles15m.length && !candles1h.length) {
-                skipLogger.warn(`${tag} ✖ No candles returned for ${c.INDEX} across both 15m and 1h intervals`);
+            if (!candles15m.length) {
+                skipLogger.warn(`${tag} ✖ No 15m candles returned for ${c.INDEX}`);
+                return null;
+            }
+            if (isUtBotEnabled && !candles1h.length) {
+                skipLogger.warn(`${tag} ✖ No 1h candles returned for ${c.INDEX} for UT Bot`);
                 return null;
             }
 

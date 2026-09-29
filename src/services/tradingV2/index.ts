@@ -150,6 +150,8 @@ export class TradingV2 {
                 `O: ₹${b.open.toFixed(1)} | H: ₹${b.high.toFixed(1)} | L: ₹${b.low.toFixed(1)} | C: ₹${b.close.toFixed(1)} (Vol: ${b.volume})`;
             const fmtTs = (ts: number) => new Date(ts).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
+            const isUtBotEnabled = c.UT_BOT_ENABLED !== false;
+
             tradingCronLogger.info(
                 `${tag} 📊 Market Snapshot (${c.INDEX}):\n` +
                 `  Spot LTP:        ₹${spotPrice.toFixed(2)}\n` +
@@ -158,9 +160,11 @@ export class TradingV2 {
                 (first15m ? `  First Bar:       ${fmtTs(first15m.timestamp)} IST | C: ₹${first15m.close.toFixed(2)}\n` : `  First Bar:       N/A\n`) +
                 (last15m  ? `  Latest Bar:      ${formatBar(last15m)}\n` : `  Latest Bar:      ⚠️ NO 15m CANDLES — ATR14 strategy disabled\n`) +
                 `  ── 1H Candles ───────────────────────────────────────\n` +
-                `  Count:           ${candles1h.length} bars (${(c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false) ? 'completed only' : 'completed + live'})\n` +
-                (first1h ? `  First Bar:       ${fmtTs(first1h.timestamp)} IST | C: ₹${first1h.close.toFixed(2)}\n` : `  First Bar:       N/A\n`) +
-                (last1h  ? `  Latest Bar:      ${formatBar(last1h)}\n` : `  Latest Bar:      ⚠️ NO 1H CANDLES — UT Bot disabled\n`) +
+                (isUtBotEnabled
+                    ? `  Count:           ${candles1h.length} bars (${(c.UT_BOT_TRADE_ON_CANDLE_CLOSE !== false) ? 'completed only' : 'completed + live'})\n` +
+                      (first1h ? `  First Bar:       ${fmtTs(first1h.timestamp)} IST | C: ₹${first1h.close.toFixed(2)}\n` : `  First Bar:       N/A\n`) +
+                      (last1h  ? `  Latest Bar:      ${formatBar(last1h)}\n` : `  Latest Bar:      ⚠️ NO 1H CANDLES — UT Bot disabled\n`)
+                    : `  Status:          Skipped (UT Bot strategy disabled)\n`) +
                 `  ─────────────────────────────────────────────────────`
             );
 
@@ -248,7 +252,6 @@ export class TradingV2 {
             }
 
             // ── 4B. PRIORITY 2: UT Bot Strategy (1-Hour Timeframe) ────────
-            const isUtBotEnabled = c.UT_BOT_ENABLED ?? true;
             if (chosenSignal === 'NONE' && isUtBotEnabled) {
                 if (!isUTBotTradingWindow(c) && !env.isTesting) {
                     const startH = c.UT_BOT_START_HOUR ?? UT_BOT_TRADING_WINDOW_START_HOUR;
