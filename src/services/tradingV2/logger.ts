@@ -3,6 +3,33 @@ import path from "path";
 import util from "util";
 
 const LOG_DIR = path.join(process.cwd(), "logs");
+const MAX_DAILY_LOG_FILES = Math.max(3, parseInt(process.env.MAX_DAILY_LOGS || "7", 10));
+const DAILY_FILE_PATTERN = /^trading_\d{8}\.log$/;
+let lastDailyRotateDate = "";
+
+function rotateDailyLogs(todayDateStr: string): void {
+    if (lastDailyRotateDate === todayDateStr) return;
+    lastDailyRotateDate = todayDateStr;
+    try {
+        if (!fs.existsSync(LOG_DIR)) return;
+        const files = fs.readdirSync(LOG_DIR);
+        const dailyFiles = files
+            .filter(f => DAILY_FILE_PATTERN.test(f))
+            .sort(); // Oldest YYYYMMDD first
+        if (dailyFiles.length > MAX_DAILY_LOG_FILES) {
+            const deleteCount = dailyFiles.length - MAX_DAILY_LOG_FILES;
+            for (let i = 0; i < deleteCount; i++) {
+                try {
+                    fs.unlinkSync(path.join(LOG_DIR, dailyFiles[i]));
+                } catch {
+                    // Silently ignore deletion error
+                }
+            }
+        }
+    } catch {
+        // Silently ignore
+    }
+}
 
 function appendToDailyLog(text: string): void {
     try {
@@ -13,7 +40,12 @@ function appendToDailyLog(text: string): void {
         const year = now.getUTCFullYear();
         const month = String(now.getUTCMonth() + 1).padStart(2, "0");
         const day = String(now.getUTCDate()).padStart(2, "0");
-        const dailyFile = path.join(LOG_DIR, `trading_${year}${month}${day}.log`);
+        const dateStr = `${year}${month}${day}`;
+
+        // Ensure old daily logs beyond MAX_DAILY_LOG_FILES are cleaned up
+        rotateDailyLogs(dateStr);
+
+        const dailyFile = path.join(LOG_DIR, `trading_${dateStr}.log`);
         const clean = text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
         fs.appendFileSync(dailyFile, clean + "\n");
     } catch {
