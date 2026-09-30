@@ -360,6 +360,27 @@ export class KiteExchange {
     }
 
     /**
+     * Delete / Cancel a GTT order on Zerodha.
+     */
+    async deleteGTT(triggerId: number | string): Promise<{ trigger_id: number } | null> {
+        tradingCronLogger.info(`[KiteExchange] ➔ Deleting GTT trigger from Zerodha: trigger_id=${triggerId}`);
+        const startTime = Date.now();
+        try {
+            const res = await this.kc.deleteGTT(triggerId);
+            const duration = Date.now() - startTime;
+            tradingCronLogger.info(`[KiteExchange] ✔ GTT successfully cancelled on Zerodha (${duration}ms): trigger_id=${triggerId}`);
+            return res;
+        } catch (err: any) {
+            const duration = Date.now() - startTime;
+            tradingCronLogger.error(`[KiteExchange] ✖ deleteGTT failed on Zerodha (${duration}ms): ${err.message}`, {
+                triggerId,
+                error: err,
+            });
+            return null;
+        }
+    }
+
+    /**
      * Cancel an open order.
      */
     async cancelOrder(orderId: string, variety: string = 'regular'): Promise<void> {

@@ -998,6 +998,29 @@ export class TradingV2 {
             );
         }
 
+        // Check if position was already closed on Zerodha (via GTT execution or manual square-off)
+        try {
+            const positions = await kite.getPositions();
+            const netPos = positions?.net?.find(p => p.tradingsymbol === state.symbol);
+            if (netPos && netPos.quantity === 0 && actualQuantity > 0) {
+                const pnlInr = netPos.pnl || ((netPos.sell_value - netPos.buy_value) || 0);
+                tradesLogger.info(
+                    `${tag} 🏁 Position ${state.symbol} was already squared off on Zerodha (Net Qty = 0, via GTT or manual exit). ` +
+                    `Reconciled P&L: ₹${pnlInr.toFixed(2)}. Marking trade as closed.`
+                );
+                state.exitPrice    = netPos.sell_price || netPos.last_price;
+                state.pnl          = pnlInr;
+                state.dailyPnl     = (state.dailyPnl ?? 0) + pnlInr;
+                state.allTimePnl   = (state.allTimePnl ?? 0) + pnlInr;
+                state.tradeOutcome = pnlInr >= 0 ? 'win' : 'loss';
+                state.status       = 'closed';
+                await (state as any).save();
+                return;
+            }
+        } catch (posErr: any) {
+            tradingCronLogger.warn(`${tag} ⚠️ Could not fetch net positions from Zerodha: ${posErr.message}`);
+        }
+
         // Recalculate TP and SL strictly from actual confirmed fill price
         const effectiveTP = (state as any).effectiveTP ?? c.TARGET_PROFIT_PCT;
         const effectiveSL = (state as any).effectiveSL ?? c.STOP_LOSS_PCT;
@@ -1181,6 +1204,16 @@ export class TradingV2 {
             state.tradeOutcome = reason === 'target' ? 'win' : 'loss';
             state.status       = 'closed';
             await state.save();
+
+            // Cancel any pending GTT on Zerodha to prevent duplicate execution
+            if (state.stopLossOrderId) {
+                try {
+                    await kite.deleteGTT(state.stopLossOrderId);
+                    tradingCronLogger.info(`${tag} ✔ Cancelled corresponding GTT #${state.stopLossOrderId} on Zerodha after position exit.`);
+                } catch (gttCancelErr: any) {
+                    tradingCronLogger.warn(`${tag} ⚠️ Failed to cancel GTT #${state.stopLossOrderId} on Zerodha: ${gttCancelErr.message}`);
+                }
+            }
 
             tradesLogger.info(
                 `${tag} ✔ Exit complete on Zerodha (order_id: ${exitResult.order_id}). Reason: ${reason} | ` +
