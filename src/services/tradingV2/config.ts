@@ -70,6 +70,7 @@ export class TradingConfig {
         // Order settings
         ORDER_TYPE: 'MARKET',
         PRODUCT: 'MIS',          // MIS = intraday (auto-squared at 3:30 PM)
+        MARKET_PROTECTION: -1,   // -1 = automatic market protection mandated by Zerodha for MARKET orders via API
 
         // Risk filters
         MAX_CONCURRENT_TRADES: 1,

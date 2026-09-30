@@ -81,6 +81,7 @@ export interface ConfigType {
     // Order settings
     ORDER_TYPE: 'MARKET' | 'LIMIT';
     PRODUCT: 'MIS' | 'NRML';       // MIS = intraday (recommended)
+    MARKET_PROTECTION?: number;    // -1 for automatic, or custom percentage band
 
     // Risk filters
     MAX_CONCURRENT_TRADES: number;  // default: 1
@@ -194,6 +195,7 @@ export interface KitePlaceOrderParams {
     disclosed_quantity?: number;
     tag?: string;                   // bot ID for easy identification
     variety?: KiteVariety;
+    market_protection?: number;     // -1 for automatic, or custom percentage (e.g. 1-100)
 }
 
 /* ───────────────────────────────────────
@@ -407,6 +409,7 @@ export interface ActiveSubscribedBot {
     IS_TRAILING_SL_ENABLED: boolean;
     ORDER_TYPE: 'MARKET' | 'LIMIT';
     PRODUCT: 'MIS' | 'NRML';
+    MARKET_PROTECTION?: number;
     MAX_CONCURRENT_TRADES: number;
     DAILY_LOSS_LIMIT: number;
     IS_WEEKEND_SAFETY_ENABLED: boolean;

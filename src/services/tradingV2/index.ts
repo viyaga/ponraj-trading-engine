@@ -722,6 +722,7 @@ export class TradingV2 {
                     price:            orderPrice,
                     variety:          variety as any,
                     tag:              c.id.substring(0, 20), // Kite tag max 20 chars
+                    market_protection: c.MARKET_PROTECTION ?? -1,
                 });
                 orderId = orderResult.order_id;
                 tradesLogger.info(`${tag} ✅ Entry BUY order submitted to Zerodha: order_id=${orderId} | ${instrument.tradingsymbol} | Qty: ${quantity} | Strategy: ${strategyName}`);
@@ -1167,6 +1168,7 @@ export class TradingV2 {
                 product:          c.PRODUCT,
                 validity:         'DAY',
                 tag:              c.id.substring(0, 20),
+                market_protection: c.MARKET_PROTECTION ?? -1,
             });
 
             const pnlInr = (currentPrice - (state.entryPrice ?? 0)) * state.quantity!;

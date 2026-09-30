@@ -292,6 +292,13 @@ export class KiteExchange {
         if (params.tag)           orderParams.tag           = params.tag;
         if (params.disclosed_quantity) orderParams.disclosed_quantity = params.disclosed_quantity;
 
+        // Zerodha requires market_protection for MARKET and SL-M orders via API
+        if (orderParams.order_type === 'MARKET' || orderParams.order_type === 'SL-M') {
+            orderParams.market_protection = params.market_protection !== undefined ? params.market_protection : -1;
+        } else if (params.market_protection !== undefined) {
+            orderParams.market_protection = params.market_protection;
+        }
+
         tradingCronLogger.info(`[KiteExchange] ➔ Sending ORDER to Zerodha: variety=${variety}`, { orderParams });
         const startTime = Date.now();
         try {
