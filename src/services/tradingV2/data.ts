@@ -204,7 +204,7 @@ export class Data {
             CANDLE_PATTERN_STRATEGY_SL_PCT:  bot.CANDLE_PATTERN_STRATEGY_SL_PCT  ?? defaults.CANDLE_PATTERN_STRATEGY_SL_PCT  ?? 10,
 
             // Trailing SL
-            IS_TRAILING_SL_ENABLED: bot.IS_TRAILING_SL_ENABLED ?? defaults.IS_TRAILING_SL_ENABLED ?? true,
+            IS_TRAILING_SL_ENABLED: bot.IS_TRAILING_SL_ENABLED ?? defaults.IS_TRAILING_SL_ENABLED ?? false,
 
             // Orders
             ORDER_TYPE: (bot.ORDER_TYPE ?? defaults.ORDER_TYPE ?? 'MARKET') as 'MARKET' | 'LIMIT',

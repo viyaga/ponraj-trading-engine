@@ -65,7 +65,7 @@ export class TradingConfig {
         UT_BOT_TRADE_ON_CANDLE_CLOSE: false,      // true = wait for 1H close (safer); false = trade on live crossover mid-candle
 
         // Trailing SL
-        IS_TRAILING_SL_ENABLED: true,
+        IS_TRAILING_SL_ENABLED: false,
 
         // Order settings
         ORDER_TYPE: 'MARKET',
