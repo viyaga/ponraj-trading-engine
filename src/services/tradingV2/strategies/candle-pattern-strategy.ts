@@ -49,6 +49,7 @@ export interface CandlePatternConfig {
     shootingStarMaxLowerWickRatio?: number; // default: 0.8
     dayRangeProximityPct?: number;          // default: 30 (% of day range for near high/low)
     minRangeAtrRatio?: number;              // default: 0.35 (candle range >= 0.35 * ATR)
+    requireExactDayExtreme?: boolean;       // default: true (candle High/Low MUST be Day High/Low)
 }
 
 /**
@@ -417,6 +418,7 @@ export class CandlePatternStrategy {
             shootingStarMaxLowerWickRatio: config?.SHOOTING_STAR_MAX_LOWER_WICK_RATIO ?? 0.8,
             dayRangeProximityPct:          config?.PATTERN_DAY_RANGE_PROXIMITY_PCT ?? 30,
             minRangeAtrRatio:              config?.PATTERN_MIN_RANGE_ATR_RATIO ?? 0.35,
+            requireExactDayExtreme:        config?.PATTERN_REQUIRE_EXACT_DAY_EXTREME ?? true,
         };
 
         const proximityThreshold = ((patternConfig.dayRangeProximityPct ?? 30) / 100) * dayRange;
@@ -444,16 +446,24 @@ export class CandlePatternStrategy {
                 hour12: false,
             });
 
-            // ─── A. EVALUATE BULLISH REVERSAL (HAMMER / PIN BAR) NEAR DAY LOW (CALL / CE) ──────
+            // Calculate Day High & Low up to this candle's close
+            const candlesUpToCandle = todayCandles.filter(c => c.timestamp <= candle.timestamp);
+            const candleDayHigh = candlesUpToCandle.length > 0 ? Math.max(...candlesUpToCandle.map(c => c.high)) : dayHigh;
+            const candleDayLow  = candlesUpToCandle.length > 0 ? Math.min(...candlesUpToCandle.map(c => c.low)) : dayLow;
+
+            // ─── A. EVALUATE BULLISH REVERSAL (HAMMER / PIN BAR) AT DAY LOW (CALL / CE) ──────
             const isBullishReversal = detected.isHammer || detected.pattern === 'PIN_BAR_BULLISH';
             if (isBullishReversal) {
-                const distFromDayLow = candle.low - dayLow;
-                const isNearDayLow = distFromDayLow <= proximityThreshold || distFromDayLow <= atrThreshold;
+                const distFromDayLow = candle.low - candleDayLow;
+                const isExactDayLow = Math.abs(distFromDayLow) <= 1.0;
+                const isNearDayLow = patternConfig.requireExactDayExtreme
+                    ? isExactDayLow
+                    : (distFromDayLow <= proximityThreshold || distFromDayLow <= atrThreshold);
 
                 if (!isNearDayLow) {
                     result.skipReasons.push(
-                        `${detected.pattern} detected at [${candleTimeStr} IST] (Low: ₹${candle.low.toFixed(1)}) but NOT near Day Low ` +
-                        `(Dist: ₹${distFromDayLow.toFixed(1)} > Max Allowed: ₹${Math.min(proximityThreshold, atrThreshold).toFixed(1)})`
+                        `${detected.pattern} detected at [${candleTimeStr} IST] (Low: ₹${candle.low.toFixed(1)}) but NOT Day Low ` +
+                        `(Candle Low ₹${candle.low.toFixed(1)} vs Day Low ₹${candleDayLow.toFixed(1)}, Dist: ₹${distFromDayLow.toFixed(1)} pts)`
                     );
                     continue;
                 }
@@ -463,7 +473,7 @@ export class CandlePatternStrategy {
 
                 if (!isBreakoutConfirmed) {
                     result.skipReasons.push(
-                        `${detected.pattern} near Day Low detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}, Low: ₹${candle.low.toFixed(1)}), ` +
+                        `${detected.pattern} at Day Low detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}, Low: ₹${candle.low.toFixed(1)}), ` +
                         `but breakout NOT confirmed (Spot ₹${spotPrice.toFixed(1)} <= High ₹${candle.high.toFixed(1)})`
                     );
                     continue;
@@ -471,6 +481,7 @@ export class CandlePatternStrategy {
 
                 // Both Pattern + Day Low Proximity + Breakout Confirmed!
                 const patternLabel = detected.pattern === 'PIN_BAR_BULLISH' ? 'BULLISH PIN BAR' : 'HAMMER';
+                const extremeDesc = patternConfig.requireExactDayExtreme ? 'AT DAY LOW' : 'NEAR DAY LOW';
                 result.signal = 'BULL';
                 result.optionType = 'CE';
                 result.pattern = detected.pattern;
@@ -482,24 +493,27 @@ export class CandlePatternStrategy {
                 const comp = detected.components;
                 const lowerWickRatio = comp.body > 0 ? (comp.lowerWick / comp.body).toFixed(1) : 'inf';
                 result.reasons.push(
-                    `🔨 ${patternLabel} NEAR DAY LOW confirmed [${candleTimeStr} IST]: Candle Low ₹${candle.low.toFixed(1)} ` +
-                    `is within ₹${distFromDayLow.toFixed(1)} of Day Low ₹${dayLow.toFixed(1)} (Day Range: ₹${dayRange.toFixed(1)}). ` +
+                    `🔨 ${patternLabel} ${extremeDesc} confirmed [${candleTimeStr} IST]: Candle Low ₹${candle.low.toFixed(1)} ` +
+                    `is the Day Low ₹${candleDayLow.toFixed(1)} (Day Range: ₹${dayRange.toFixed(1)}). ` +
                     `Body: ${(comp.bodyPercent * 100).toFixed(1)}%, Lower Wick: ${lowerWickRatio}x body. ` +
                     `BREAKOUT CONFIRMED: High ₹${candle.high.toFixed(1)} broken (Current: ₹${spotPrice.toFixed(1)}).`
                 );
                 return result;
             }
 
-            // ─── B. EVALUATE BEARISH REVERSAL (SHOOTING STAR / PIN BAR) NEAR DAY HIGH (PUT / PE) ───
+            // ─── B. EVALUATE BEARISH REVERSAL (SHOOTING STAR / PIN BAR) AT DAY HIGH (PUT / PE) ───
             const isBearishReversal = detected.isShootingStar || detected.pattern === 'PIN_BAR_BEARISH';
             if (isBearishReversal) {
-                const distFromDayHigh = dayHigh - candle.high;
-                const isNearDayHigh = distFromDayHigh <= proximityThreshold || distFromDayHigh <= atrThreshold;
+                const distFromDayHigh = candleDayHigh - candle.high;
+                const isExactDayHigh = Math.abs(distFromDayHigh) <= 1.0;
+                const isNearDayHigh = patternConfig.requireExactDayExtreme
+                    ? isExactDayHigh
+                    : (distFromDayHigh <= proximityThreshold || distFromDayHigh <= atrThreshold);
 
                 if (!isNearDayHigh) {
                     result.skipReasons.push(
-                        `${detected.pattern} detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}) but NOT near Day High ` +
-                        `(Dist: ₹${distFromDayHigh.toFixed(1)} > Max Allowed: ₹${Math.min(proximityThreshold, atrThreshold).toFixed(1)})`
+                        `${detected.pattern} detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}) but NOT Day High ` +
+                        `(Candle High ₹${candle.high.toFixed(1)} vs Day High ₹${candleDayHigh.toFixed(1)}, Dist: ₹${distFromDayHigh.toFixed(1)} pts)`
                     );
                     continue;
                 }
@@ -509,7 +523,7 @@ export class CandlePatternStrategy {
 
                 if (!isBreakoutConfirmed) {
                     result.skipReasons.push(
-                        `${detected.pattern} near Day High detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}, Low: ₹${candle.low.toFixed(1)}), ` +
+                        `${detected.pattern} at Day High detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}, Low: ₹${candle.low.toFixed(1)}), ` +
                         `but breakdown NOT confirmed (Spot ₹${spotPrice.toFixed(1)} >= Low ₹${candle.low.toFixed(1)})`
                     );
                     continue;
@@ -517,6 +531,7 @@ export class CandlePatternStrategy {
 
                 // Both Pattern + Day High Proximity + Breakdown Confirmed!
                 const patternLabel = detected.pattern === 'PIN_BAR_BEARISH' ? 'BEARISH PIN BAR' : 'SHOOTING STAR';
+                const extremeDesc = patternConfig.requireExactDayExtreme ? 'AT DAY HIGH' : 'NEAR DAY HIGH';
                 result.signal = 'BEAR';
                 result.optionType = 'PE';
                 result.pattern = detected.pattern;
@@ -528,8 +543,8 @@ export class CandlePatternStrategy {
                 const comp = detected.components;
                 const upperWickRatio = comp.body > 0 ? (comp.upperWick / comp.body).toFixed(1) : 'inf';
                 result.reasons.push(
-                    `⭐ ${patternLabel} NEAR DAY HIGH confirmed [${candleTimeStr} IST]: Candle High ₹${candle.high.toFixed(1)} ` +
-                    `is within ₹${distFromDayHigh.toFixed(1)} of Day High ₹${dayHigh.toFixed(1)} (Day Range: ₹${dayRange.toFixed(1)}). ` +
+                    `⭐ ${patternLabel} ${extremeDesc} confirmed [${candleTimeStr} IST]: Candle High ₹${candle.high.toFixed(1)} ` +
+                    `is the Day High ₹${candleDayHigh.toFixed(1)} (Day Range: ₹${dayRange.toFixed(1)}). ` +
                     `Body: ${(comp.bodyPercent * 100).toFixed(1)}%, Upper Wick: ${upperWickRatio}x body. ` +
                     `BREAKDOWN CONFIRMED: Low ₹${candle.low.toFixed(1)} broken (Current: ₹${spotPrice.toFixed(1)}).`
                 );

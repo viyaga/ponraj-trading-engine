@@ -51,6 +51,7 @@ export class TradingConfig {
         SHOOTING_STAR_MAX_LOWER_WICK_RATIO: 0.8,
         PATTERN_DAY_RANGE_PROXIMITY_PCT: 30, // within bottom/top 30% of day's range
         PATTERN_MIN_RANGE_ATR_RATIO: 0.35,   // candle range >= 0.35 * ATR(14)
+        PATTERN_REQUIRE_EXACT_DAY_EXTREME: true, // Candle High/Low MUST be Day High/Low
 
         // UT Bot Alerts Strategy (1H candle)
         UT_BOT_ENABLED: false,

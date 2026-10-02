@@ -55,13 +55,13 @@
     "isNearDayLow": true,
     "isNearDayHigh": true,
     "breakoutConfirmed": true,
-    "signal": "BULL",
-    "optionType": "CE",
-    "score": 100,
-    "reasons": [
-      "🔨 HAMMER NEAR DAY LOW confirmed [09:30 IST]: Candle Low ₹22681.2 is within ₹21.4 of Day Low ₹22659.8 (Day Range: ₹76.9). Body: 13.4%, Lower Wick: 6.5x body. BREAKOUT CONFIRMED: High ₹22720.4 broken (Current: ₹22735.3)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "HAMMER detected at [09:30 IST] (Low: ₹22681.2) but NOT Day Low (Candle Low ₹22681.2 vs Day Low ₹22659.8, Dist: ₹21.4 pts)"
+    ]
   },
   {
     "index": 71,
@@ -87,13 +87,13 @@
     "isNearDayLow": true,
     "isNearDayHigh": true,
     "breakoutConfirmed": false,
-    "signal": "BULL",
-    "optionType": "CE",
-    "score": 100,
-    "reasons": [
-      "🔨 HAMMER NEAR DAY LOW confirmed [09:30 IST]: Candle Low ₹22681.2 is within ₹21.4 of Day Low ₹22659.8 (Day Range: ₹76.9). Body: 13.4%, Lower Wick: 6.5x body. BREAKOUT CONFIRMED: High ₹22720.4 broken (Current: ₹22722.3)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "HAMMER detected at [09:30 IST] (Low: ₹22681.2) but NOT Day Low (Candle Low ₹22681.2 vs Day Low ₹22659.8, Dist: ₹21.4 pts)"
+    ]
   },
   {
     "index": 72,
@@ -155,7 +155,7 @@
     "optionType": "PE",
     "score": 100,
     "reasons": [
-      "⭐ SHOOTING STAR NEAR DAY HIGH confirmed [10:15 IST]: Candle High ₹22771.8 is within ₹0.0 of Day High ₹22771.8 (Day Range: ₹112.0). Body: 17.6%, Upper Wick: 4.2x body. BREAKDOWN CONFIRMED: Low ₹22753.0 broken (Current: ₹22698.1)."
+      "⭐ SHOOTING STAR AT DAY HIGH confirmed [10:15 IST]: Candle High ₹22771.8 is the Day High ₹22771.8 (Day Range: ₹112.0). Body: 17.6%, Upper Wick: 4.2x body. BREAKDOWN CONFIRMED: Low ₹22753.0 broken (Current: ₹22698.1)."
     ],
     "skipReasons": []
   },
@@ -187,7 +187,7 @@
     "optionType": "PE",
     "score": 100,
     "reasons": [
-      "⭐ SHOOTING STAR NEAR DAY HIGH confirmed [10:15 IST]: Candle High ₹22771.8 is within ₹0.0 of Day High ₹22771.8 (Day Range: ₹112.0). Body: 17.6%, Upper Wick: 4.2x body. BREAKDOWN CONFIRMED: Low ₹22753.0 broken (Current: ₹22702.8)."
+      "⭐ SHOOTING STAR AT DAY HIGH confirmed [10:15 IST]: Candle High ₹22771.8 is the Day High ₹22771.8 (Day Range: ₹112.0). Body: 17.6%, Upper Wick: 4.2x body. BREAKDOWN CONFIRMED: Low ₹22753.0 broken (Current: ₹22702.8)."
     ],
     "skipReasons": []
   },
@@ -252,7 +252,7 @@
     "score": 0,
     "reasons": [],
     "skipReasons": [
-      "PIN_BAR_BEARISH detected at [11:00 IST] (High: ₹22730.0) but NOT near Day High (Dist: ₹41.8 > Max Allowed: ₹33.6)"
+      "PIN_BAR_BEARISH detected at [11:00 IST] (High: ₹22730.0) but NOT Day High (Candle High ₹22730.0 vs Day High ₹22771.8, Dist: ₹41.8 pts)"
     ]
   },
   {
@@ -279,13 +279,14 @@
     "isNearDayLow": true,
     "isNearDayHigh": false,
     "breakoutConfirmed": true,
-    "signal": "BULL",
-    "optionType": "CE",
-    "score": 100,
-    "reasons": [
-      "🔨 HAMMER NEAR DAY LOW confirmed [11:15 IST]: Candle Low ₹22666.0 is within ₹6.3 of Day Low ₹22659.8 (Day Range: ₹112.0). Body: 25.6%, Lower Wick: 2.3x body. BREAKOUT CONFIRMED: High ₹22706.8 broken (Current: ₹22721.5)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "HAMMER detected at [11:15 IST] (Low: ₹22666.0) but NOT Day Low (Candle Low ₹22666.0 vs Day Low ₹22659.8, Dist: ₹6.3 pts)",
+      "PIN_BAR_BEARISH detected at [11:00 IST] (High: ₹22730.0) but NOT Day High (Candle High ₹22730.0 vs Day High ₹22771.8, Dist: ₹41.8 pts)"
+    ]
   },
   {
     "index": 78,
@@ -311,13 +312,13 @@
     "isNearDayLow": true,
     "isNearDayHigh": false,
     "breakoutConfirmed": false,
-    "signal": "BULL",
-    "optionType": "CE",
-    "score": 100,
-    "reasons": [
-      "🔨 HAMMER NEAR DAY LOW confirmed [11:15 IST]: Candle Low ₹22666.0 is within ₹6.3 of Day Low ₹22659.8 (Day Range: ₹112.0). Body: 25.6%, Lower Wick: 2.3x body. BREAKOUT CONFIRMED: High ₹22706.8 broken (Current: ₹22707.8)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "HAMMER detected at [11:15 IST] (Low: ₹22666.0) but NOT Day Low (Candle Low ₹22666.0 vs Day Low ₹22659.8, Dist: ₹6.3 pts)"
+    ]
   },
   {
     "index": 79,
@@ -535,13 +536,13 @@
     "isNearDayLow": false,
     "isNearDayHigh": true,
     "breakoutConfirmed": true,
-    "signal": "BEAR",
-    "optionType": "PE",
-    "score": 100,
-    "reasons": [
-      "⭐ SHOOTING STAR NEAR DAY HIGH confirmed [13:15 IST]: Candle High ₹22788.7 is within ₹20.6 of Day High ₹22809.3 (Day Range: ₹149.5). Body: 21.5%, Upper Wick: 2.9x body. BREAKDOWN CONFIRMED: Low ₹22772.2 broken (Current: ₹22726.2)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "SHOOTING_STAR detected at [13:15 IST] (High: ₹22788.7) but NOT Day High (Candle High ₹22788.7 vs Day High ₹22809.3, Dist: ₹20.6 pts)"
+    ]
   },
   {
     "index": 86,
@@ -567,13 +568,13 @@
     "isNearDayLow": false,
     "isNearDayHigh": true,
     "breakoutConfirmed": false,
-    "signal": "BEAR",
-    "optionType": "PE",
-    "score": 100,
-    "reasons": [
-      "⭐ SHOOTING STAR NEAR DAY HIGH confirmed [13:15 IST]: Candle High ₹22788.7 is within ₹20.6 of Day High ₹22809.3 (Day Range: ₹149.5). Body: 21.5%, Upper Wick: 2.9x body. BREAKDOWN CONFIRMED: Low ₹22772.2 broken (Current: ₹22726.3)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "SHOOTING_STAR detected at [13:15 IST] (High: ₹22788.7) but NOT Day High (Candle High ₹22788.7 vs Day High ₹22809.3, Dist: ₹20.6 pts)"
+    ]
   },
   {
     "index": 87,
@@ -855,13 +856,13 @@
     "isNearDayLow": true,
     "isNearDayHigh": true,
     "breakoutConfirmed": true,
-    "signal": "BEAR",
-    "optionType": "PE",
-    "score": 100,
-    "reasons": [
-      "⭐ SHOOTING STAR NEAR DAY HIGH confirmed [09:30 IST]: Candle High ₹22578.5 is within ₹11.5 of Day High ₹22590.0 (Day Range: ₹82.0). Body: 30.6%, Upper Wick: 2.1x body. BREAKDOWN CONFIRMED: Low ₹22536.7 broken (Current: ₹22532.5)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "SHOOTING_STAR detected at [09:30 IST] (High: ₹22578.5) but NOT Day High (Candle High ₹22578.5 vs Day High ₹22590.0, Dist: ₹11.5 pts)"
+    ]
   },
   {
     "index": 96,
@@ -887,13 +888,13 @@
     "isNearDayLow": true,
     "isNearDayHigh": true,
     "breakoutConfirmed": false,
-    "signal": "BEAR",
-    "optionType": "PE",
-    "score": 100,
-    "reasons": [
-      "⭐ SHOOTING STAR NEAR DAY HIGH confirmed [09:30 IST]: Candle High ₹22578.5 is within ₹11.5 of Day High ₹22590.0 (Day Range: ₹82.0). Body: 30.6%, Upper Wick: 2.1x body. BREAKDOWN CONFIRMED: Low ₹22536.7 broken (Current: ₹22570.5)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "SHOOTING_STAR detected at [09:30 IST] (High: ₹22578.5) but NOT Day High (Candle High ₹22578.5 vs Day High ₹22590.0, Dist: ₹11.5 pts)"
+    ]
   },
   {
     "index": 97,
@@ -923,7 +924,7 @@
     "optionType": "PE",
     "score": 100,
     "reasons": [
-      "⭐ SHOOTING STAR NEAR DAY HIGH confirmed [10:00 IST]: Candle High ₹22610.6 is within ₹0.0 of Day High ₹22610.6 (Day Range: ₹102.5). Body: 12.0%, Upper Wick: 6.6x body. BREAKDOWN CONFIRMED: Low ₹22565.1 broken (Current: ₹22543.0)."
+      "⭐ SHOOTING STAR AT DAY HIGH confirmed [10:00 IST]: Candle High ₹22610.6 is the Day High ₹22610.6 (Day Range: ₹102.5). Body: 12.0%, Upper Wick: 6.6x body. BREAKDOWN CONFIRMED: Low ₹22565.1 broken (Current: ₹22543.0)."
     ],
     "skipReasons": []
   },
@@ -955,7 +956,7 @@
     "optionType": "PE",
     "score": 100,
     "reasons": [
-      "⭐ SHOOTING STAR NEAR DAY HIGH confirmed [10:00 IST]: Candle High ₹22610.6 is within ₹0.0 of Day High ₹22610.6 (Day Range: ₹102.5). Body: 12.0%, Upper Wick: 6.6x body. BREAKDOWN CONFIRMED: Low ₹22565.1 broken (Current: ₹22561.2)."
+      "⭐ SHOOTING STAR AT DAY HIGH confirmed [10:00 IST]: Candle High ₹22610.6 is the Day High ₹22610.6 (Day Range: ₹102.5). Body: 12.0%, Upper Wick: 6.6x body. BREAKDOWN CONFIRMED: Low ₹22565.1 broken (Current: ₹22561.2)."
     ],
     "skipReasons": []
   },
@@ -983,13 +984,13 @@
     "isNearDayLow": false,
     "isNearDayHigh": true,
     "breakoutConfirmed": true,
-    "signal": "BEAR",
-    "optionType": "PE",
-    "score": 100,
-    "reasons": [
-      "⭐ BEARISH PIN BAR NEAR DAY HIGH confirmed [10:30 IST]: Candle High ₹22594.4 is within ₹16.2 of Day High ₹22610.6 (Day Range: ₹102.5). Body: 6.9%, Upper Wick: 12.5x body. BREAKDOWN CONFIRMED: Low ₹22558.0 broken (Current: ₹22547.9)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "PIN_BAR_BEARISH detected at [10:30 IST] (High: ₹22594.4) but NOT Day High (Candle High ₹22594.4 vs Day High ₹22610.6, Dist: ₹16.2 pts)"
+    ]
   },
   {
     "index": 100,
@@ -1015,13 +1016,13 @@
     "isNearDayLow": true,
     "isNearDayHigh": true,
     "breakoutConfirmed": false,
-    "signal": "BEAR",
-    "optionType": "PE",
-    "score": 100,
-    "reasons": [
-      "⭐ BEARISH PIN BAR NEAR DAY HIGH confirmed [10:30 IST]: Candle High ₹22594.4 is within ₹16.2 of Day High ₹22610.6 (Day Range: ₹102.5). Body: 6.9%, Upper Wick: 12.5x body. BREAKDOWN CONFIRMED: Low ₹22558.0 broken (Current: ₹22562.3)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "PIN_BAR_BEARISH detected at [10:30 IST] (High: ₹22594.4) but NOT Day High (Candle High ₹22594.4 vs Day High ₹22610.6, Dist: ₹16.2 pts)"
+    ]
   },
   {
     "index": 101,
@@ -1143,13 +1144,13 @@
     "isNearDayLow": true,
     "isNearDayHigh": true,
     "breakoutConfirmed": true,
-    "signal": "BULL",
-    "optionType": "CE",
-    "score": 100,
-    "reasons": [
-      "🔨 HAMMER NEAR DAY LOW confirmed [11:45 IST]: Candle Low ₹22544.0 is within ₹35.9 of Day Low ₹22508.0 (Day Range: ₹102.5). Body: 16.0%, Lower Wick: 5.1x body. BREAKOUT CONFIRMED: High ₹22572.7 broken (Current: ₹22574.3)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "HAMMER detected at [11:45 IST] (Low: ₹22544.0) but NOT Day Low (Candle Low ₹22544.0 vs Day Low ₹22508.0, Dist: ₹35.9 pts)"
+    ]
   },
   {
     "index": 105,
@@ -1175,13 +1176,13 @@
     "isNearDayLow": true,
     "isNearDayHigh": true,
     "breakoutConfirmed": false,
-    "signal": "BULL",
-    "optionType": "CE",
-    "score": 100,
-    "reasons": [
-      "🔨 HAMMER NEAR DAY LOW confirmed [11:45 IST]: Candle Low ₹22544.0 is within ₹43.2 of Day Low ₹22500.8 (Day Range: ₹109.8). Body: 16.0%, Lower Wick: 5.1x body. BREAKOUT CONFIRMED: High ₹22572.7 broken (Current: ₹22520.5)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "HAMMER detected at [11:45 IST] (Low: ₹22544.0) but NOT Day Low (Candle Low ₹22544.0 vs Day Low ₹22508.0, Dist: ₹35.9 pts)"
+    ]
   },
   {
     "index": 106,
@@ -1463,13 +1464,13 @@
     "isNearDayLow": true,
     "isNearDayHigh": false,
     "breakoutConfirmed": true,
-    "signal": "BULL",
-    "optionType": "CE",
-    "score": 100,
-    "reasons": [
-      "🔨 HAMMER NEAR DAY LOW confirmed [14:15 IST]: Candle Low ₹22266.4 is within ₹49.1 of Day Low ₹22217.3 (Day Range: ₹393.3). Body: 27.0%, Lower Wick: 2.2x body. BREAKOUT CONFIRMED: High ₹22314.2 broken (Current: ₹22378.5)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "HAMMER detected at [14:15 IST] (Low: ₹22266.4) but NOT Day Low (Candle Low ₹22266.4 vs Day Low ₹22217.3, Dist: ₹49.1 pts)"
+    ]
   },
   {
     "index": 115,
@@ -1495,13 +1496,13 @@
     "isNearDayLow": true,
     "isNearDayHigh": false,
     "breakoutConfirmed": false,
-    "signal": "BULL",
-    "optionType": "CE",
-    "score": 100,
-    "reasons": [
-      "🔨 HAMMER NEAR DAY LOW confirmed [14:15 IST]: Candle Low ₹22266.4 is within ₹49.1 of Day Low ₹22217.3 (Day Range: ₹393.3). Body: 27.0%, Lower Wick: 2.2x body. BREAKOUT CONFIRMED: High ₹22314.2 broken (Current: ₹22358.5)."
-    ],
-    "skipReasons": []
+    "signal": "NONE",
+    "optionType": null,
+    "score": 0,
+    "reasons": [],
+    "skipReasons": [
+      "HAMMER detected at [14:15 IST] (Low: ₹22266.4) but NOT Day Low (Candle Low ₹22266.4 vs Day Low ₹22217.3, Dist: ₹49.1 pts)"
+    ]
   },
   {
     "index": 116,
