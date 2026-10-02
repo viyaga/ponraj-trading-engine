@@ -43,10 +43,10 @@ import { ATR14Strategy } from './atr14-strategy';
 export interface CandlePatternConfig {
     hammerMaxBodyPct?: number;             // default: 0.35
     hammerMinLowerWickRatio?: number;      // default: 2.0
-    hammerMaxUpperWickRatio?: number;      // default: 0.5
+    hammerMaxUpperWickRatio?: number;      // default: 0.8
     shootingStarMaxBodyPct?: number;        // default: 0.35
     shootingStarMinUpperWickRatio?: number; // default: 2.0
-    shootingStarMaxLowerWickRatio?: number; // default: 0.5
+    shootingStarMaxLowerWickRatio?: number; // default: 0.8
     dayRangeProximityPct?: number;          // default: 30 (% of day range for near high/low)
     minRangeAtrRatio?: number;              // default: 0.35 (candle range >= 0.35 * ATR)
 }
@@ -91,7 +91,7 @@ export function isHammerPattern(
     const c = computeCandleComponents(candle);
     const maxBodyPct = config?.hammerMaxBodyPct ?? 0.35;
     const minLowerWickRatio = config?.hammerMinLowerWickRatio ?? 2.0;
-    const maxUpperWickRatio = config?.hammerMaxUpperWickRatio ?? 0.5;
+    const maxUpperWickRatio = config?.hammerMaxUpperWickRatio ?? 0.8;
     const minRangeAtrRatio = config?.minRangeAtrRatio ?? 0.35;
 
     if (c.range <= 0) {
@@ -132,7 +132,7 @@ export function isShootingStarPattern(
     const c = computeCandleComponents(candle);
     const maxBodyPct = config?.shootingStarMaxBodyPct ?? 0.35;
     const minUpperWickRatio = config?.shootingStarMinUpperWickRatio ?? 2.0;
-    const maxLowerWickRatio = config?.shootingStarMaxLowerWickRatio ?? 0.5;
+    const maxLowerWickRatio = config?.shootingStarMaxLowerWickRatio ?? 0.8;
     const minRangeAtrRatio = config?.minRangeAtrRatio ?? 0.35;
 
     if (c.range <= 0) {
@@ -203,7 +203,7 @@ export function detectCandlePattern(
     if (comp.lowerWickPercent >= 0.60 && comp.bodyPercent <= 0.30) {
         return {
             pattern: 'PIN_BAR_BULLISH',
-            isHammer: false,
+            isHammer: true, // Also treat as Hammer-equivalent for bullish reversal
             isShootingStar: false,
             components: comp,
             description: `Bullish Pin Bar: Lower wick ${(comp.lowerWickPercent * 100).toFixed(1)}% rejection`,
@@ -213,7 +213,7 @@ export function detectCandlePattern(
         return {
             pattern: 'PIN_BAR_BEARISH',
             isHammer: false,
-            isShootingStar: false,
+            isShootingStar: true, // Also treat as Shooting Star-equivalent for bearish reversal
             components: comp,
             description: `Bearish Pin Bar: Upper wick ${(comp.upperWickPercent * 100).toFixed(1)}% rejection`,
         };
@@ -389,8 +389,9 @@ export class CandlePatternStrategy {
         result.atr = atr;
 
         // 2. Calculate Day High, Day Low, and Day Range
-        const now = Date.now();
-        let todayCandles = getTodayCandles(sorted, now);
+        const latestCandle = sorted[sorted.length - 1];
+        const referenceTime = latestCandle?.timestamp ?? Date.now();
+        let todayCandles = getTodayCandles(sorted, referenceTime);
         // Fallback: If today's candles count < 2 (e.g. testing mode or weekend backtest), use last 12 candles
         if (todayCandles.length < 2) {
             todayCandles = sorted.slice(-Math.min(12, sorted.length));
@@ -410,10 +411,10 @@ export class CandlePatternStrategy {
         const patternConfig: CandlePatternConfig = {
             hammerMaxBodyPct:              config?.HAMMER_MAX_BODY_PCT ?? 0.35,
             hammerMinLowerWickRatio:       config?.HAMMER_MIN_LOWER_WICK_RATIO ?? 2.0,
-            hammerMaxUpperWickRatio:       config?.HAMMER_MAX_UPPER_WICK_RATIO ?? 0.5,
+            hammerMaxUpperWickRatio:       config?.HAMMER_MAX_UPPER_WICK_RATIO ?? 0.8,
             shootingStarMaxBodyPct:        config?.SHOOTING_STAR_MAX_BODY_PCT ?? 0.35,
             shootingStarMinUpperWickRatio: config?.SHOOTING_STAR_MIN_UPPER_WICK_RATIO ?? 2.0,
-            shootingStarMaxLowerWickRatio: config?.SHOOTING_STAR_MAX_LOWER_WICK_RATIO ?? 0.5,
+            shootingStarMaxLowerWickRatio: config?.SHOOTING_STAR_MAX_LOWER_WICK_RATIO ?? 0.8,
             dayRangeProximityPct:          config?.PATTERN_DAY_RANGE_PROXIMITY_PCT ?? 30,
             minRangeAtrRatio:              config?.PATTERN_MIN_RANGE_ATR_RATIO ?? 0.35,
         };
@@ -421,7 +422,7 @@ export class CandlePatternStrategy {
         const proximityThreshold = ((patternConfig.dayRangeProximityPct ?? 30) / 100) * dayRange;
         const atrThreshold = atr > 0 ? atr * 1.0 : proximityThreshold;
 
-        // 3. Inspect recent candles for Hammer or Shooting Star
+        // 3. Inspect recent candles for Hammer / Bullish Pin Bar or Shooting Star / Bearish Pin Bar
         // We check the last completed candle (Candle N-1), or the one right before (Candle N-2)
         const lastIdx = sorted.length - 1;
         const candidateIndices = [lastIdx];
@@ -443,88 +444,94 @@ export class CandlePatternStrategy {
                 hour12: false,
             });
 
-            // ─── A. EVALUATE HAMMER NEAR DAY LOW (CALL OPTION / CE) ──────
-            if (detected.isHammer) {
+            // ─── A. EVALUATE BULLISH REVERSAL (HAMMER / PIN BAR) NEAR DAY LOW (CALL / CE) ──────
+            const isBullishReversal = detected.isHammer || detected.pattern === 'PIN_BAR_BULLISH';
+            if (isBullishReversal) {
                 const distFromDayLow = candle.low - dayLow;
                 const isNearDayLow = distFromDayLow <= proximityThreshold || distFromDayLow <= atrThreshold;
 
                 if (!isNearDayLow) {
                     result.skipReasons.push(
-                        `Hammer detected at [${candleTimeStr} IST] (Low: ₹${candle.low.toFixed(1)}) but NOT near Day Low ` +
+                        `${detected.pattern} detected at [${candleTimeStr} IST] (Low: ₹${candle.low.toFixed(1)}) but NOT near Day Low ` +
                         `(Dist: ₹${distFromDayLow.toFixed(1)} > Max Allowed: ₹${Math.min(proximityThreshold, atrThreshold).toFixed(1)})`
                     );
                     continue;
                 }
 
-                // Trade Confirmation: Spot price or confirming candle breaks above Hammer High
-                const isBreakoutConfirmed = spotPrice > candle.high;
+                // Trade Confirmation: Spot price or confirming candle breaks above Pattern High
+                const isBreakoutConfirmed = spotPrice > candle.high || (idx < lastIdx && sorted[lastIdx].high > candle.high);
 
                 if (!isBreakoutConfirmed) {
                     result.skipReasons.push(
-                        `Hammer near Day Low detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}, Low: ₹${candle.low.toFixed(1)}), ` +
-                        `but breakout NOT confirmed (Spot ₹${spotPrice.toFixed(1)} <= Hammer High ₹${candle.high.toFixed(1)})`
+                        `${detected.pattern} near Day Low detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}, Low: ₹${candle.low.toFixed(1)}), ` +
+                        `but breakout NOT confirmed (Spot ₹${spotPrice.toFixed(1)} <= High ₹${candle.high.toFixed(1)})`
                     );
                     continue;
                 }
 
                 // Both Pattern + Day Low Proximity + Breakout Confirmed!
+                const patternLabel = detected.pattern === 'PIN_BAR_BULLISH' ? 'BULLISH PIN BAR' : 'HAMMER';
                 result.signal = 'BULL';
                 result.optionType = 'CE';
-                result.pattern = 'HAMMER';
+                result.pattern = detected.pattern;
                 result.score = 100;
                 result.patternCandle = candle;
+                result.confirmingCandle = idx < lastIdx ? sorted[lastIdx] : undefined;
                 result.signalCandleTimestamp = candle.timestamp;
 
                 const comp = detected.components;
                 const lowerWickRatio = comp.body > 0 ? (comp.lowerWick / comp.body).toFixed(1) : 'inf';
                 result.reasons.push(
-                    `🔨 HAMMER NEAR DAY LOW confirmed [${candleTimeStr} IST]: Candle Low ₹${candle.low.toFixed(1)} ` +
+                    `🔨 ${patternLabel} NEAR DAY LOW confirmed [${candleTimeStr} IST]: Candle Low ₹${candle.low.toFixed(1)} ` +
                     `is within ₹${distFromDayLow.toFixed(1)} of Day Low ₹${dayLow.toFixed(1)} (Day Range: ₹${dayRange.toFixed(1)}). ` +
                     `Body: ${(comp.bodyPercent * 100).toFixed(1)}%, Lower Wick: ${lowerWickRatio}x body. ` +
-                    `BREAKOUT CONFIRMED: Spot ₹${spotPrice.toFixed(1)} > Hammer High ₹${candle.high.toFixed(1)} (+${(spotPrice - candle.high).toFixed(1)} pts).`
+                    `BREAKOUT CONFIRMED: High ₹${candle.high.toFixed(1)} broken (Current: ₹${spotPrice.toFixed(1)}).`
                 );
                 return result;
             }
 
-            // ─── B. EVALUATE SHOOTING STAR NEAR DAY HIGH (PUT OPTION / PE) ───
-            if (detected.isShootingStar) {
+            // ─── B. EVALUATE BEARISH REVERSAL (SHOOTING STAR / PIN BAR) NEAR DAY HIGH (PUT / PE) ───
+            const isBearishReversal = detected.isShootingStar || detected.pattern === 'PIN_BAR_BEARISH';
+            if (isBearishReversal) {
                 const distFromDayHigh = dayHigh - candle.high;
                 const isNearDayHigh = distFromDayHigh <= proximityThreshold || distFromDayHigh <= atrThreshold;
 
                 if (!isNearDayHigh) {
                     result.skipReasons.push(
-                        `Shooting Star detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}) but NOT near Day High ` +
+                        `${detected.pattern} detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}) but NOT near Day High ` +
                         `(Dist: ₹${distFromDayHigh.toFixed(1)} > Max Allowed: ₹${Math.min(proximityThreshold, atrThreshold).toFixed(1)})`
                     );
                     continue;
                 }
 
-                // Trade Confirmation: Spot price or confirming candle breaks below Shooting Star Low
-                const isBreakoutConfirmed = spotPrice < candle.low;
+                // Trade Confirmation: Spot price or confirming candle breaks below Pattern Low
+                const isBreakoutConfirmed = spotPrice < candle.low || (idx < lastIdx && sorted[lastIdx].low < candle.low);
 
                 if (!isBreakoutConfirmed) {
                     result.skipReasons.push(
-                        `Shooting Star near Day High detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}, Low: ₹${candle.low.toFixed(1)}), ` +
-                        `but breakdown NOT confirmed (Spot ₹${spotPrice.toFixed(1)} >= Shooting Star Low ₹${candle.low.toFixed(1)})`
+                        `${detected.pattern} near Day High detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}, Low: ₹${candle.low.toFixed(1)}), ` +
+                        `but breakdown NOT confirmed (Spot ₹${spotPrice.toFixed(1)} >= Low ₹${candle.low.toFixed(1)})`
                     );
                     continue;
                 }
 
                 // Both Pattern + Day High Proximity + Breakdown Confirmed!
+                const patternLabel = detected.pattern === 'PIN_BAR_BEARISH' ? 'BEARISH PIN BAR' : 'SHOOTING STAR';
                 result.signal = 'BEAR';
                 result.optionType = 'PE';
-                result.pattern = 'SHOOTING_STAR';
+                result.pattern = detected.pattern;
                 result.score = 100;
                 result.patternCandle = candle;
+                result.confirmingCandle = idx < lastIdx ? sorted[lastIdx] : undefined;
                 result.signalCandleTimestamp = candle.timestamp;
 
                 const comp = detected.components;
                 const upperWickRatio = comp.body > 0 ? (comp.upperWick / comp.body).toFixed(1) : 'inf';
                 result.reasons.push(
-                    `⭐ SHOOTING STAR NEAR DAY HIGH confirmed [${candleTimeStr} IST]: Candle High ₹${candle.high.toFixed(1)} ` +
+                    `⭐ ${patternLabel} NEAR DAY HIGH confirmed [${candleTimeStr} IST]: Candle High ₹${candle.high.toFixed(1)} ` +
                     `is within ₹${distFromDayHigh.toFixed(1)} of Day High ₹${dayHigh.toFixed(1)} (Day Range: ₹${dayRange.toFixed(1)}). ` +
                     `Body: ${(comp.bodyPercent * 100).toFixed(1)}%, Upper Wick: ${upperWickRatio}x body. ` +
-                    `BREAKDOWN CONFIRMED: Spot ₹${spotPrice.toFixed(1)} < Shooting Star Low ₹${candle.low.toFixed(1)} (-${(candle.low - spotPrice).toFixed(1)} pts).`
+                    `BREAKDOWN CONFIRMED: Low ₹${candle.low.toFixed(1)} broken (Current: ₹${spotPrice.toFixed(1)}).`
                 );
                 return result;
             }

@@ -459,9 +459,11 @@ export class AngelMarketDataService {
             }
         }
 
-        const isColdStart   = !cached || cached.candles.length === 0;
-        const lookbackDays  = isColdStart ? this.BOOTSTRAP_DAYS_15M : 0;
-        const lookbackMs    = isColdStart
+        const lastCached15mTs = cached?.candles[cached.candles.length - 1]?.timestamp ?? 0;
+        const isStale15mGap   = cached && cached.candles.length > 0 && (nowMs - lastCached15mTs > 24 * 60 * 60 * 1000);
+        const isColdStart     = !cached || cached.candles.length === 0 || isStale15mGap;
+        const lookbackDays    = isColdStart ? this.BOOTSTRAP_DAYS_15M : 0;
+        const lookbackMs      = isColdStart
             ? lookbackDays * 24 * 60 * 60 * 1000
             : this.INCREMENTAL_PERIODS_15M * this.FIFTEEN_MIN_MS;
 
@@ -711,8 +713,10 @@ export class AngelMarketDataService {
             }
         }
 
-        const isColdStart  = !cached || cached.candles.length === 0;
-        const lookbackMs   = isColdStart
+        const lastCached1hTs = cached?.candles[cached.candles.length - 1]?.timestamp ?? 0;
+        const isStale1hGap   = cached && cached.candles.length > 0 && (nowMs - lastCached1hTs > 24 * 60 * 60 * 1000);
+        const isColdStart    = !cached || cached.candles.length === 0 || isStale1hGap;
+        const lookbackMs     = isColdStart
             ? this.BOOTSTRAP_DAYS_1H * 24 * 60 * 60 * 1000
             : this.INCREMENTAL_PERIODS_1H * this.ONE_HOUR_MS;
 

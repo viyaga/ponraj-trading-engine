@@ -48,10 +48,10 @@ export interface ConfigType {
     CANDLE_PATTERN_STRATEGY_SL_PCT?: number;    // default: 10
     HAMMER_MAX_BODY_PCT?: number;               // default: 0.35
     HAMMER_MIN_LOWER_WICK_RATIO?: number;       // default: 2.0
-    HAMMER_MAX_UPPER_WICK_RATIO?: number;       // default: 0.5
+    HAMMER_MAX_UPPER_WICK_RATIO?: number;       // default: 0.8
     SHOOTING_STAR_MAX_BODY_PCT?: number;         // default: 0.35
     SHOOTING_STAR_MIN_UPPER_WICK_RATIO?: number; // default: 2.0
-    SHOOTING_STAR_MAX_LOWER_WICK_RATIO?: number; // default: 0.5
+    SHOOTING_STAR_MAX_LOWER_WICK_RATIO?: number; // default: 0.8
     PATTERN_DAY_RANGE_PROXIMITY_PCT?: number;   // default: 30 (% of day's range)
     PATTERN_MIN_RANGE_ATR_RATIO?: number;       // default: 0.35
 
