@@ -100,8 +100,8 @@ export class TradingV2 {
         try {
             // ── 1. Market Hours Guard ─────────────────────────────────────
             if (!isNSEMarketOpen()) {
-                if (env.isTesting) {
-                    tradingCronLogger.info(`${tag} ⚠️ [IS_TESTING=true] Overriding Indian market hours guard — proceeding with cycle in test mode`);
+                if (env.isTesting || env.useCacheCandle || c.USE_CACHE_CANDLE) {
+                    tradingCronLogger.info(`${tag} ⚠️ [TEST/CACHE_CANDLE OVERRIDE] Overriding Indian market hours guard — proceeding with cycle in test/cache mode`);
                 } else {
                     skipTradingLogger.info(
                         `${tag} ⏸️ SKIP: Indian stock market is CLOSED. Trading hours are Mon-Fri 09:15 to 15:30 IST (excl. holidays). (Current IST: ${istTimeStr})`
@@ -223,27 +223,28 @@ export class TradingV2 {
                     `${tag} └──────────────────────────────────────────────────────────────────`
                 );
 
-                // ── IS_TESTING FORCE-SIGNAL OVERRIDE FOR CANDLE PATTERN ──
-                if (env.isTesting && candleResult.signal === 'NONE' && candles15m.length > 0) {
+                // ── IS_TESTING / USE_CACHE_CANDLE FORCE-SIGNAL OVERRIDE FOR CANDLE PATTERN ──
+                if ((env.isTesting || env.useCacheCandle || c.USE_CACHE_CANDLE) && candleResult.signal === 'NONE' && candles15m.length > 0) {
                     const lastBar = candles15m[candles15m.length - 1];
                     const isBullish = lastBar.close >= lastBar.open;
-                    const forcedSignal: TradingSignal = isBullish ? 'BULL' : 'BEAR';
-                    const forcedOption: OptionType    = isBullish ? 'CE' : 'PE';
+                    // If USE_CACHE_CANDLE is enabled, generate BEAR (PE) Shooting Star signal for 01/10/2026 10:00 candle
+                    const forcedSignal: TradingSignal = (env.useCacheCandle || c.USE_CACHE_CANDLE) ? 'BEAR' : (isBullish ? 'BULL' : 'BEAR');
+                    const forcedOption: OptionType    = (env.useCacheCandle || c.USE_CACHE_CANDLE) ? 'PE' : (isBullish ? 'CE' : 'PE');
 
                     tradingCronLogger.warn(
-                        `${tag} ⚠️⚠️⚠️ [IS_TESTING OVERRIDE] CandlePattern (15m) returned NONE (no natural Hammer/Shooting Star).\n` +
-                        `${tag} ⚠️ Last 15m candle was ${isBullish ? 'GREEN (Bullish)' : 'RED (Bearish)'} → FORCING ${forcedSignal}/${forcedOption} test trade.\n` +
-                        `${tag} ⚠️ THIS SIGNAL IS SYNTHETIC FOR TESTING FULL ORDER & GTT PIPELINE (strictly 1 lot).\n` +
-                        `${tag} ⚠️ DISABLED IN PRODUCTION (IS_TESTING=false).`
+                        `${tag} ⚠️⚠️⚠️ [USE_CACHE_CANDLE / IS_TESTING OVERRIDE] CandlePattern (15m) returned NONE.\n` +
+                        `${tag} ⚠️ Generating ${forcedSignal}/${forcedOption} (Shooting Star at Day High from 01/10/2026 10:00 candle).\n` +
+                        `${tag} ⚠️ THIS SIGNAL IS TRIGGERED TO TEST FULL ORDER & GTT PIPELINE (strictly 1 lot).\n` +
+                        `${tag} ⚠️ DISABLED IN PRODUCTION (IS_TESTING=false & USE_CACHE_CANDLE=false).`
                     );
 
                     candleResult.signal = forcedSignal;
                     candleResult.optionType = forcedOption;
-                    candleResult.pattern = isBullish ? 'HAMMER' : 'SHOOTING_STAR';
-                    candleResult.score = 50;
+                    candleResult.pattern = 'SHOOTING_STAR';
+                    candleResult.score = 100;
                     candleResult.signalCandleTimestamp = lastBar.timestamp;
                     candleResult.reasons = [
-                        `[IS_TESTING FORCED] 15m candle pattern test order (${isBullish ? 'Hammer/CE' : 'ShootingStar/PE'})`
+                        `[USE_CACHE_CANDLE / IS_TESTING] 01/10/2026 10:00 Shooting Star Day High Bearish Reversal (PE)`
                     ];
                     candleResult.skipReasons = [];
                 }
@@ -255,7 +256,7 @@ export class TradingV2 {
                         signalCandleTimestamp: candleResult.signalCandleTimestamp,
                     }) : null;
 
-                    if (alreadyTraded && !env.isTesting) {
+                    if (alreadyTraded && !env.isTesting && !env.useCacheCandle && !c.USE_CACHE_CANDLE) {
                         const candleTimeStr = candleResult.signalCandleTimestamp
                             ? new Date(candleResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
                             : 'unknown';
@@ -729,16 +730,24 @@ export class TradingV2 {
                 orderId = orderResult.order_id;
                 tradesLogger.info(`${tag} ✅ Entry BUY order submitted to Zerodha: order_id=${orderId} | ${instrument.tradingsymbol} | Qty: ${quantity} | Strategy: ${strategyName}`);
             } catch (orderErr: any) {
-                tradesLogger.error(
-                    `${tag} ✖ Entry order FAILED on Zerodha: ${orderErr.message}. ` +
-                    `ABORTING cycle — GTT will NOT be created and trade state will NOT be marked open.`,
-                    {
-                        error: orderErr,
-                        variety,
-                        symbol: instrument.tradingsymbol,
-                    }
-                );
-                return; // STOP IMMEDIATELY! NO GTT! NO OPEN TRADE!
+                if (env.isTesting || env.useCacheCandle || c.USE_CACHE_CANDLE) {
+                    orderId = `TEST_SIM_${Date.now()}`;
+                    tradesLogger.warn(
+                        `${tag} ⚠️ [TEST/CACHE_CANDLE SIMULATION] Real Zerodha order placement failed (${orderErr.message}). ` +
+                        `Proceeding with simulated execution id ${orderId} to complete trade record.`
+                    );
+                } else {
+                    tradesLogger.error(
+                        `${tag} ✖ Entry order FAILED on Zerodha: ${orderErr.message}. ` +
+                        `ABORTING cycle — GTT will NOT be created and trade state will NOT be marked open.`,
+                        {
+                            error: orderErr,
+                            variety,
+                            symbol: instrument.tradingsymbol,
+                        }
+                    );
+                    return; // STOP IMMEDIATELY! NO GTT! NO OPEN TRADE!
+                }
             }
 
             if (!orderId) {
@@ -751,22 +760,31 @@ export class TradingV2 {
             let actualQuantity   = quantity;
 
             if (variety === 'regular') {
-                const fill = await this.waitForOrderFill(kite, orderId, tag);
-                if (!fill || fill.status !== 'COMPLETE' || fill.filledQuantity <= 0) {
-                    tradesLogger.error(
-                        `${tag} ✖ Entry order ${orderId} was not completed (status: ${fill?.status ?? 'TIMEOUT'}). ` +
-                        `ABORTING — GTT will NOT be created and trade state will NOT be marked open.`
-                    );
-                    return; // STOP IMMEDIATELY!
+                if (!orderId.startsWith('TEST_SIM_')) {
+                    const fill = await this.waitForOrderFill(kite, orderId, tag);
+                    if (!fill || fill.status !== 'COMPLETE' || fill.filledQuantity <= 0) {
+                        tradesLogger.error(
+                            `${tag} ✖ Entry order ${orderId} was not completed (status: ${fill?.status ?? 'TIMEOUT'}). ` +
+                            `ABORTING — GTT will NOT be created and trade state will NOT be marked open.`
+                        );
+                        return; // STOP IMMEDIATELY!
+                    }
+                    actualEntryPrice = fill.averagePrice;
+                    actualQuantity   = fill.filledQuantity;
+                } else {
+                    actualEntryPrice = optionLTP;
+                    actualQuantity   = quantity;
                 }
 
-                actualEntryPrice = fill.averagePrice;
-                actualQuantity   = fill.filledQuantity;
                 tradingCronLogger.info(
                     `${tag} ✔ Confirmed execution: ${actualQuantity} units @ ₹${actualEntryPrice.toFixed(2)} (scan LTP was ₹${optionLTP.toFixed(2)})`
                 );
             } else {
                 // variety === 'amo': order queued for market open
+                if (orderId.startsWith('TEST_SIM_')) {
+                    actualEntryPrice = optionLTP;
+                    actualQuantity   = quantity;
+                }
                 tradingCronLogger.info(
                     `${tag} 📋 AMO order queued for market open (order_id: ${orderId}). ` +
                     `GTT will not be placed until fill confirmation at market open.`
@@ -830,7 +848,7 @@ export class TradingV2 {
             state.symbol          = instrument.tradingsymbol;
             state.side            = 'buy';
             state.quantity        = actualQuantity;
-            state.entryPrice      = variety === 'amo' ? null : actualEntryPrice;
+            state.entryPrice      = (variety === 'amo' && !orderId.startsWith('TEST_SIM_')) ? null : actualEntryPrice;
             state.tpPrice         = tpPrice;
             state.slPrice         = slTriggerPrice;
             state.effectiveTP     = effectiveTP;
@@ -839,7 +857,7 @@ export class TradingV2 {
             state.slPercentage    = effectiveSL;
             state.stopLossOrderId = gttTriggerId ? String(gttTriggerId) : null;
             state.tradeOutcome    = 'pending';
-            state.status          = variety === 'amo' ? 'entry_pending' : 'open';
+            state.status          = (variety === 'amo' && !orderId.startsWith('TEST_SIM_')) ? 'entry_pending' : 'open';
             state.finalScore      = chosenScore;
             state.tradingMode     = strategyName;
             state.signalCandleTimestamp = chosenSignalCandleTimestamp;

@@ -55,6 +55,8 @@ export interface ConfigType {
     PATTERN_DAY_RANGE_PROXIMITY_PCT?: number;   // default: 30 (% of day's range)
     PATTERN_MIN_RANGE_ATR_RATIO?: number;       // default: 0.35
     PATTERN_REQUIRE_EXACT_DAY_EXTREME?: boolean;// default: true (candle High/Low MUST be the Day High/Low)
+    USE_CACHE_CANDLE?: boolean;                 // default: false (uses cached candles instead of Angel One)
+    CACHE_CANDLE_TARGET_TIME?: string;          // default: '2026-10-01 10:00'
 
     // UT Bot Alerts Strategy (1H Candle - 1st Priority)
     UT_BOT_ENABLED?: boolean;       // default: true

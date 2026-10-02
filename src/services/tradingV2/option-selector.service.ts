@@ -199,7 +199,7 @@ export class OptionSelectorService {
         // Prefers Angel One SmartAPI (100% Free & eliminates Zerodha PermissionException),
         // falling back to Zerodha Kite getLTP().
         tradingCronLogger.info(
-            `${tag} [OptionSelector] Fetching live LTPs for ${perStrike.length} candidate options (trying Angel One SmartAPI first)...`
+            `${tag} [OptionSelector] Fetching live LTPs from API for ${perStrike.length} candidate options (trying Angel One SmartAPI first)...`
         );
         let ltpMap = await this.fetchLTPsFromAngelOne(perStrike, tag);
 
@@ -211,12 +211,12 @@ export class OptionSelectorService {
         }
 
         tradingCronLogger.info(
-            `${tag} [OptionSelector] LTP fetch complete: ${ltpMap.size}/${perStrike.length} prices available`
+            `${tag} [OptionSelector] LTP fetch complete: ${ltpMap.size}/${perStrike.length} live prices available from API`
         );
 
         if (!ltpMap.size) {
             tradingCronLogger.warn(
-                `${tag} [OptionSelector] ⚠️  No LTPs returned across both Angel One and Zerodha for candidate options.`
+                `${tag} [OptionSelector] ⚠️  No live LTPs returned across both Angel One and Zerodha APIs for candidate options.`
             );
             return { selected: null, ltpAvailable: false };
         }

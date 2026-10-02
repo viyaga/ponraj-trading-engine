@@ -90,16 +90,20 @@ export const executeTradingCycle = async (): Promise<void> => {
 
     // ── 1. Indian Market Hours Guard (Strictly Mon-Fri 09:15 - 15:30 IST, non-holiday) ──
     if (!isIndianMarketTime()) {
-        const ist = getISTDetails();
-        tradingCronLogger.debug(`[TradingCron] Outside Indian market hours (09:15 AM - 03:30 PM IST Mon-Fri). Current IST: ${ist.isoDate} ${ist.displayTime}. Skipping cycle.`);
-        isCycleRunning = false;
-        return;
+        if (env.isTesting || env.useCacheCandle) {
+            tradingCronLogger.info(`[TradingCron] ⚠️ [TEST/CACHE_CANDLE OVERRIDE] Indian market is officially closed — proceeding in test/cache mode`);
+        } else {
+            const ist = getISTDetails();
+            tradingCronLogger.debug(`[TradingCron] Outside Indian market hours (09:15 AM - 03:30 PM IST Mon-Fri). Current IST: ${ist.isoDate} ${ist.displayTime}. Skipping cycle.`);
+            isCycleRunning = false;
+            return;
+        }
     }
 
     // ── 1B. Bot Trading Entry Window Check (09:30 AM - 03:15 PM IST) ──
     if (!isNSETradingHours()) {
-        if (env.isTesting) {
-            tradingCronLogger.info("[TradingCron] ⚠️ [IS_TESTING=true] In Indian market hours, but outside 9:30-15:15 bot entry window — proceeding in test mode");
+        if (env.isTesting || env.useCacheCandle) {
+            tradingCronLogger.info("[TradingCron] ⚠️ [TEST/CACHE_CANDLE OVERRIDE] Outside 9:30-15:15 bot entry window — proceeding in test/cache mode");
         } else {
             const hasOpenPos = await ActivePositionTracker.hasActivePositions();
             if (!hasOpenPos) {
@@ -201,6 +205,7 @@ export const executeTradingCycle = async (): Promise<void> => {
             const needsCycleRun =
                 isInitialRun ||
                 hasOpenPos ||
+                env.useCacheCandle ||
                 !isStreamConnected ||
                 hasCandlePatternBotsToEvaluate ||
                 hasUtBoundaryBotsToEvaluate ||

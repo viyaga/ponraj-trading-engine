@@ -52,6 +52,8 @@ export class TradingConfig {
         PATTERN_DAY_RANGE_PROXIMITY_PCT: 30, // within bottom/top 30% of day's range
         PATTERN_MIN_RANGE_ATR_RATIO: 0.35,   // candle range >= 0.35 * ATR(14)
         PATTERN_REQUIRE_EXACT_DAY_EXTREME: true, // Candle High/Low MUST be Day High/Low
+        USE_CACHE_CANDLE: process.env.USE_CACHE_CANDLE === 'true' || false,
+        CACHE_CANDLE_TARGET_TIME: process.env.CACHE_CANDLE_TARGET_TIME || '2026-10-01 10:00',
 
         // UT Bot Alerts Strategy (1H candle)
         UT_BOT_ENABLED: false,
