@@ -8,6 +8,7 @@ import { ConfigType } from "../services/tradingV2/type";
 import { tradingCronLogger } from "../services/tradingV2/logger";
 import { BulkSyncService } from "../services/bulkSync.service";
 import { isNSETradingHours, is3pmTo315pmWindow } from "../services/tradingV2/strategies/atr14-strategy";
+import { isIndianMarketTime, getISTDetails, isNSEMarketOpen } from "../utils/indianMarketTime";
 import { startCycleLogging, endCycleLogging } from "../utils/cycleLogger";
 import { AngelStreamService } from "../services/tradingV2/angel-stream.service";
 import { AngelMarketDataService } from "../services/tradingV2/angel-market-data.service";
@@ -17,7 +18,7 @@ import { TradeState } from "../models/tradeState.model";
 import { ActivePositionTracker } from "../services/tradingV2/active-position-tracker";
 
 /* ============================================================================
- * Cron Scheduler — Execution Window (Mon–Fri 9:30 AM - 3:15 PM IST)
+ * Cron Scheduler — Execution Window (Mon–Fri 9:15 AM - 3:30 PM IST)
  * ============================================================================ */
 
 // ── In-Memory Config Cache (15 min TTL) ──────────────────────────────────────
@@ -87,22 +88,34 @@ export const executeTradingCycle = async (): Promise<void> => {
     }
     isCycleRunning = true;
 
-    // ── 1. Market Hours Guard ───────────────────────────────────────────
+    // ── 1. Indian Market Hours Guard (Strictly Mon-Fri 09:15 - 15:30 IST, non-holiday) ──
+    if (!isIndianMarketTime()) {
+        const ist = getISTDetails();
+        tradingCronLogger.debug(`[TradingCron] Outside Indian market hours (09:15 AM - 03:30 PM IST Mon-Fri). Current IST: ${ist.isoDate} ${ist.displayTime}. Skipping cycle.`);
+        isCycleRunning = false;
+        return;
+    }
+
+    // ── 1B. Bot Trading Entry Window Check (09:30 AM - 03:15 PM IST) ──
     if (!isNSETradingHours()) {
         if (env.isTesting) {
-            tradingCronLogger.info("[TradingCron] ⚠️ [IS_TESTING=true] Overriding bot trading hours guard — running cycle in testing mode");
+            tradingCronLogger.info("[TradingCron] ⚠️ [IS_TESTING=true] In Indian market hours, but outside 9:30-15:15 bot entry window — proceeding in test mode");
         } else {
-            tradingCronLogger.debug("[TradingCron] Outside bot trading hours (9:30 AM - 3:15 PM IST) — skipping cycle");
-            isCycleRunning = false;
-            return;
+            const hasOpenPos = await ActivePositionTracker.hasActivePositions();
+            if (!hasOpenPos) {
+                tradingCronLogger.debug("[TradingCron] Within market hours, but outside bot entry window (9:30 AM - 3:15 PM IST) and 0 open positions — skipping cycle");
+                isCycleRunning = false;
+                return;
+            }
+            tradingCronLogger.info("[TradingCron] Outside bot entry window but active positions exist — running position monitoring cycle");
         }
     }
 
     startCycleLogging();
     try {
-        const now = new Date();
-            const istMinutes = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
-            const istMinute = istMinutes % 60;
+        const ist = getISTDetails();
+        const istMinutes = ist.totalMinutes;
+        const istMinute = ist.minutes;
 
             // ── 2. Fetch or Refresh Bot Configs (cached for 15 minutes) ──────────
             const isConfigStale = (Date.now() - lastConfigFetchTime > CONFIG_CACHE_TTL) || cachedConfigs.length === 0;
@@ -331,19 +344,30 @@ export const executeTradingCycle = async (): Promise<void> => {
     };
 
 const tradingCycleCronJob = (): void => {
-    // Schedule recurring cron
-    cron.schedule(env.cronSchedule ?? "*/1 9-15 * * 1-5", async () => {
+    // Schedule recurring cron strictly in Asia/Kolkata timezone
+    const cronSchedule = env.cronSchedule ?? "*/1 9-15 * * 1-5";
+    cron.schedule(cronSchedule, async () => {
         await executeTradingCycle();
+    }, {
+        timezone: "Asia/Kolkata",
     });
 
-    tradingCronLogger.info(`[CronScheduler] Optimized Cron scheduled: "${env.cronSchedule ?? "*/1 9-15 * * 1-5"}" (WebSocket + Threshold Guard Active)`);
+    tradingCronLogger.info(`[CronScheduler] Recurring cron scheduled: "${cronSchedule}" with timezone: "Asia/Kolkata" (Indian Market: 09:15–15:30 IST Mon–Fri)`);
 
-    // Immediate startup execution (after 2s delay for WebSocket auto-login & DB connection to stabilize)
+    // Immediate startup execution check (delayed 2s for WebSocket auto-login & DB connection to stabilize)
     setTimeout(async () => {
-        tradingCronLogger.info("[TradingCron] ➔ Triggering immediate startup trading cycle check...");
-        await executeTradingCycle().catch((err) => {
-            tradingCronLogger.error(`[TradingCron] Startup cycle failed: ${err.message}`, { error: err });
-        });
+        if (isIndianMarketTime()) {
+            tradingCronLogger.info("[TradingCron] ➔ Indian Market is OPEN — Triggering immediate startup trading cycle check...");
+            await executeTradingCycle().catch((err) => {
+                tradingCronLogger.error(`[TradingCron] Startup cycle failed: ${err.message}`, { error: err });
+            });
+        } else {
+            const ist = getISTDetails();
+            tradingCronLogger.info(
+                `[TradingCron] ➔ Indian Market is currently CLOSED (Current IST: ${ist.isoDate} ${ist.displayTime}, Day: ${ist.dayOfWeek}). ` +
+                `Cycle execution and cycle logging will remain idle until next market session (09:15–15:30 IST Mon–Fri).`
+            );
+        }
     }, 2000);
 };
 

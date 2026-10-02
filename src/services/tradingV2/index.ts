@@ -26,6 +26,7 @@ import {
     ATR14Strategy,
     getMinutesToMarketClose,
     isNSEMarketOpen,
+    isNSETradingHours,
     is3pmTo315pmWindow,
     isUTBotTradingWindow,
     isOpening915Candle,
@@ -81,7 +82,8 @@ export class TradingV2 {
             `${tag} ║ Time (IST):      ${istTimeStr}\n` +
             `${tag} ║ Bot ID:          ${c.id} (${c.INDEX})\n` +
             `${tag} ║ Execution Mode:  ${c.DRY_RUN ? '🧪 DRY RUN (Simulation Only)' : (env.isTesting ? '⚡ TEST MODE (Live Smallest Lot)' : '🚀 LIVE PRODUCTION')}\n` +
-            `${tag} ║ Market Window:   ${isNSEMarketOpen() ? '🟢 OPEN (9:30 AM – 3:15 PM IST)' : '🔴 CLOSED'}\n` +
+            `${tag} ║ Indian Market:   ${isNSEMarketOpen() ? '🟢 OPEN (09:15 AM – 03:30 PM IST)' : '🔴 CLOSED'}\n` +
+            `${tag} ║ Bot Entry Window:${isNSETradingHours(c) ? '🟢 OPEN (09:30 AM – 03:15 PM IST)' : '🔴 CLOSED'}\n` +
             `${tag} ╠══════════════════════════════════════════════════════════════════════════\n` +
             `${tag} ║ ACTIVE STRATEGIES:\n` +
             `${tag} ║  1. Candle Pattern (15m): ${isCandlePatternEnabled ? '🟢 ACTIVE (Hammer near Low / Shooting Star near High)' : '⚪ DISABLED'}\n` +
@@ -99,10 +101,10 @@ export class TradingV2 {
             // ── 1. Market Hours Guard ─────────────────────────────────────
             if (!isNSEMarketOpen()) {
                 if (env.isTesting) {
-                    tradingCronLogger.info(`${tag} ⚠️ [IS_TESTING=true] Overriding bot trading hours guard — proceeding with cycle in test mode`);
+                    tradingCronLogger.info(`${tag} ⚠️ [IS_TESTING=true] Overriding Indian market hours guard — proceeding with cycle in test mode`);
                 } else {
                     skipTradingLogger.info(
-                        `${tag} ⏸️ SKIP: Outside allowed bot trading hours. Trading window is Mon-Fri 09:30 to 15:15 IST. (Current IST: ${istTimeStr})`
+                        `${tag} ⏸️ SKIP: Indian stock market is CLOSED. Trading hours are Mon-Fri 09:15 to 15:30 IST (excl. holidays). (Current IST: ${istTimeStr})`
                     );
                     return;
                 }

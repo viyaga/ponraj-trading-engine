@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import util from "util";
+import { getISTDetails, isIndianMarketTime, IST_OFFSET_MS } from "./indianMarketTime";
 
 const LOG_DIR = path.join(process.cwd(), "logs");
 const MAX_LOG_FILES = Math.max(5, parseInt(process.env.MAX_LOG_FILES || "20", 10));
@@ -14,8 +15,15 @@ let activeLoggingDepth = 0;
 
 /**
  * Starts cycle logging by creating a log file for the current cycle and intercepting console output.
+ * STRICT REQUIREMENT: Cycle logs are ONLY created during Indian market time (09:15 - 15:30 IST, Mon-Fri, non-holiday).
+ * Outside Indian market time, cycle logging is cleanly skipped so unnecessary log files are not produced.
  */
-export function startCycleLogging(): void {
+export function startCycleLogging(options?: { force?: boolean }): void {
+    // Only create cycle logs during Indian market hours, unless explicitly forced
+    if (!options?.force && !isIndianMarketTime()) {
+        return;
+    }
+
     activeLoggingDepth++;
     if (activeLoggingDepth > 1 && activeLogFile) {
         return; // Already logging to an active cycle file
@@ -30,17 +38,9 @@ export function startCycleLogging(): void {
         // Clean up old log files before starting a new one
         rotateLogs();
 
-        // Generate filename using the current timestamp in UTC
-        const now = new Date();
-        const year = now.getUTCFullYear();
-        const month = String(now.getUTCMonth() + 1).padStart(2, "0");
-        const day = String(now.getUTCDate()).padStart(2, "0");
-        const hours = String(now.getUTCHours()).padStart(2, "0");
-        const minutes = String(now.getUTCMinutes()).padStart(2, "0");
-        const seconds = String(now.getUTCSeconds()).padStart(2, "0");
-
-        const dateStr = `${year}${month}${day}_${hours}${minutes}${seconds}`;
-        activeLogFile = path.join(LOG_DIR, `cycle_${dateStr}.log`);
+        // Generate filename using the current timestamp in Indian Standard Time (IST)
+        const ist = getISTDetails();
+        activeLogFile = path.join(LOG_DIR, `cycle_${ist.timestampStr}.log`);
 
         // Intercept console functions if not already intercepted
         if (!originalLog) {
@@ -76,6 +76,10 @@ export function startCycleLogging(): void {
  * Ends cycle logging by resetting the active file and restoring original console functions.
  */
 export function endCycleLogging(): void {
+    if (activeLoggingDepth === 0 && !activeLogFile) {
+        return; // Logging was not active (e.g. skipped because outside Indian market hours)
+    }
+
     activeLoggingDepth = Math.max(0, activeLoggingDepth - 1);
     if (activeLoggingDepth > 0) {
         return; // Still within an outer logging cycle
@@ -114,6 +118,9 @@ function writeToLog(text: string): void {
  */
 function rotateLogs(): void {
     try {
+        if (!fs.existsSync(LOG_DIR)) {
+            return;
+        }
         const files = fs.readdirSync(LOG_DIR);
         const logFiles = files
             .filter(f => FILE_PATTERN.test(f))
@@ -123,7 +130,7 @@ function rotateLogs(): void {
                 try {
                     time = fs.statSync(filePath).mtimeMs;
                 } catch {
-                    // fall back to parsing timestamp from name if fs.stat fails
+                    // fall back to parsing IST timestamp from filename if fs.stat fails
                     const match = f.match(/cycle_(\d{8})_(\d{6})\.log/);
                     if (match) {
                         const dateStr = match[1];
@@ -134,7 +141,7 @@ function rotateLogs(): void {
                         const hour = parseInt(timeStr.substring(0, 2), 10);
                         const min = parseInt(timeStr.substring(2, 4), 10);
                         const sec = parseInt(timeStr.substring(4, 6), 10);
-                        time = Date.UTC(year, month, day, hour, min, sec);
+                        time = Date.UTC(year, month, day, hour, min, sec) - IST_OFFSET_MS;
                     }
                 }
                 return { name: f, path: filePath, time };
