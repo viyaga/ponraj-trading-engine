@@ -1,6 +1,6 @@
 [
   {
-    "index": 69,
+    "index": 65,
     "timestamp": 1790739900000,
     "timeIST": "09:15",
     "dateIST": "30 Sept 2026",
@@ -17,7 +17,7 @@
     "dayHigh": 22736.65,
     "dayLow": 22659.8,
     "dayRange": 76.85000000000218,
-    "atr14": 42.26909793987339,
+    "atr14": 42.29931407272814,
     "distFromDayLow": 0,
     "distFromDayHigh": 0,
     "isNearDayLow": true,
@@ -32,7 +32,7 @@
     ]
   },
   {
-    "index": 70,
+    "index": 66,
     "timestamp": 1790740800000,
     "timeIST": "09:30",
     "dateIST": "30 Sept 2026",
@@ -49,7 +49,7 @@
     "dayHigh": 22736.65,
     "dayLow": 22659.8,
     "dayRange": 76.85000000000218,
-    "atr14": 42.142733801311,
+    "atr14": 42.17079163896184,
     "distFromDayLow": 21.350000000002183,
     "distFromDayHigh": 16.25,
     "isNearDayLow": true,
@@ -64,7 +64,7 @@
     ]
   },
   {
-    "index": 71,
+    "index": 67,
     "timestamp": 1790741700000,
     "timeIST": "09:45",
     "dateIST": "30 Sept 2026",
@@ -81,7 +81,7 @@
     "dayHigh": 22736.65,
     "dayLow": 22659.8,
     "dayRange": 76.85000000000218,
-    "atr14": 42.43610995836021,
+    "atr14": 42.46216366475028,
     "distFromDayLow": 29.299999999999272,
     "distFromDayHigh": 1.3000000000029104,
     "isNearDayLow": true,
@@ -96,7 +96,7 @@
     ]
   },
   {
-    "index": 72,
+    "index": 68,
     "timestamp": 1790742600000,
     "timeIST": "10:00",
     "dateIST": "30 Sept 2026",
@@ -113,7 +113,7 @@
     "dayHigh": 22755.75,
     "dayLow": 22659.8,
     "dayRange": 95.95000000000073,
-    "atr14": 42.19781638990581,
+    "atr14": 42.22200911726801,
     "distFromDayLow": 56.85000000000218,
     "distFromDayHigh": 0,
     "isNearDayLow": false,
@@ -128,7 +128,7 @@
     ]
   },
   {
-    "index": 73,
+    "index": 69,
     "timestamp": 1790743500000,
     "timeIST": "10:15",
     "dateIST": "30 Sept 2026",
@@ -145,7 +145,7 @@
     "dayHigh": 22771.8,
     "dayLow": 22659.8,
     "dayRange": 112,
-    "atr14": 40.52654379062677,
+    "atr14": 40.54900846603453,
     "distFromDayLow": 93.20000000000073,
     "distFromDayHigh": 0,
     "isNearDayLow": false,
@@ -160,7 +160,7 @@
     "skipReasons": []
   },
   {
-    "index": 74,
+    "index": 70,
     "timestamp": 1790744400000,
     "timeIST": "10:30",
     "dateIST": "30 Sept 2026",
@@ -177,7 +177,7 @@
     "dayHigh": 22771.8,
     "dayLow": 22659.8,
     "dayRange": 112,
-    "atr14": 41.917504948439145,
+    "atr14": 41.93836500417492,
     "distFromDayLow": 38.29999999999927,
     "distFromDayHigh": 14.099999999998545,
     "isNearDayLow": true,
@@ -192,7 +192,7 @@
     "skipReasons": []
   },
   {
-    "index": 75,
+    "index": 71,
     "timestamp": 1790745300000,
     "timeIST": "10:45",
     "dateIST": "30 Sept 2026",
@@ -209,7 +209,7 @@
     "dayHigh": 22771.8,
     "dayLow": 22659.8,
     "dayRange": 112,
-    "atr14": 41.29839745212206,
+    "atr14": 41.31776750387671,
     "distFromDayLow": 25.850000000002183,
     "distFromDayHigh": 52.89999999999782,
     "isNearDayLow": true,
@@ -224,7 +224,7 @@
     ]
   },
   {
-    "index": 76,
+    "index": 72,
     "timestamp": 1790746200000,
     "timeIST": "11:00",
     "dateIST": "30 Sept 2026",
@@ -241,7 +241,7 @@
     "dayHigh": 22771.8,
     "dayLow": 22659.8,
     "dayRange": 112,
-    "atr14": 41.466369062684876,
+    "atr14": 41.484355539314194,
     "distFromDayLow": 26.5,
     "distFromDayHigh": 41.849999999998545,
     "isNearDayLow": true,
@@ -256,7 +256,7 @@
     ]
   },
   {
-    "index": 77,
+    "index": 73,
     "timestamp": 1790747100000,
     "timeIST": "11:15",
     "dateIST": "30 Sept 2026",
@@ -273,7 +273,7 @@
     "dayHigh": 22771.8,
     "dayLow": 22659.8,
     "dayRange": 112,
-    "atr14": 41.4116284153503,
+    "atr14": 41.42833014364895,
     "distFromDayLow": 6.25,
     "distFromDayHigh": 65.04999999999927,
     "isNearDayLow": true,
@@ -289,7 +289,7 @@
     ]
   },
   {
-    "index": 78,
+    "index": 74,
     "timestamp": 1790748000000,
     "timeIST": "11:30",
     "dateIST": "30 Sept 2026",
@@ -306,7 +306,7 @@
     "dayHigh": 22771.8,
     "dayLow": 22659.8,
     "dayRange": 112,
-    "atr14": 40.36794067139665,
+    "atr14": 40.38344941910254,
     "distFromDayLow": 34.900000000001455,
     "distFromDayHigh": 50.29999999999927,
     "isNearDayLow": true,
@@ -321,7 +321,7 @@
     ]
   },
   {
-    "index": 79,
+    "index": 75,
     "timestamp": 1790748900000,
     "timeIST": "11:45",
     "dateIST": "30 Sept 2026",
@@ -338,7 +338,7 @@
     "dayHigh": 22771.8,
     "dayLow": 22659.8,
     "dayRange": 112,
-    "atr14": 40.03808776629689,
+    "atr14": 40.0524887463095,
     "distFromDayLow": 44.70000000000073,
     "distFromDayHigh": 31.549999999999272,
     "isNearDayLow": false,
@@ -353,7 +353,7 @@
     ]
   },
   {
-    "index": 80,
+    "index": 76,
     "timestamp": 1790749800000,
     "timeIST": "12:00",
     "dateIST": "30 Sept 2026",
@@ -370,7 +370,7 @@
     "dayHigh": 22771.8,
     "dayLow": 22659.8,
     "dayRange": 112,
-    "atr14": 39.667510068704146,
+    "atr14": 39.68088240728729,
     "distFromDayLow": 53.650000000001455,
     "distFromDayHigh": 23.5,
     "isNearDayLow": false,
@@ -385,7 +385,7 @@
     ]
   },
   {
-    "index": 81,
+    "index": 77,
     "timestamp": 1790750700000,
     "timeIST": "12:15",
     "dateIST": "30 Sept 2026",
@@ -402,7 +402,7 @@
     "dayHigh": 22771.8,
     "dayLow": 22659.8,
     "dayRange": 112,
-    "atr14": 40.98768792093967,
+    "atr14": 41.00010509248116,
     "distFromDayLow": 47.75,
     "distFromDayHigh": 6.099999999998545,
     "isNearDayLow": false,
@@ -417,7 +417,7 @@
     ]
   },
   {
-    "index": 82,
+    "index": 78,
     "timestamp": 1790751600000,
     "timeIST": "12:30",
     "dateIST": "30 Sept 2026",
@@ -434,7 +434,7 @@
     "dayHigh": 22789.7,
     "dayLow": 22659.8,
     "dayRange": 129.90000000000146,
-    "atr14": 41.145710212301175,
+    "atr14": 41.15724044301827,
     "distFromDayLow": 86.70000000000073,
     "distFromDayHigh": 0,
     "isNearDayLow": false,
@@ -449,7 +449,7 @@
     ]
   },
   {
-    "index": 83,
+    "index": 79,
     "timestamp": 1790752500000,
     "timeIST": "12:45",
     "dateIST": "30 Sept 2026",
@@ -466,7 +466,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22659.8,
     "dayRange": 149.54999999999927,
-    "atr14": 40.85315948285104,
+    "atr14": 40.86386612565976,
     "distFromDayLow": 112.5,
     "distFromDayHigh": 0,
     "isNearDayLow": false,
@@ -481,7 +481,7 @@
     ]
   },
   {
-    "index": 84,
+    "index": 80,
     "timestamp": 1790753400000,
     "timeIST": "13:00",
     "dateIST": "30 Sept 2026",
@@ -498,7 +498,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22659.8,
     "dayRange": 149.54999999999927,
-    "atr14": 39.34579094836168,
+    "atr14": 39.35573283096978,
     "distFromDayLow": 115.90000000000146,
     "distFromDayHigh": 13.899999999997817,
     "isNearDayLow": false,
@@ -513,7 +513,7 @@
     ]
   },
   {
-    "index": 85,
+    "index": 81,
     "timestamp": 1790754300000,
     "timeIST": "13:15",
     "dateIST": "30 Sept 2026",
@@ -530,7 +530,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22659.8,
     "dayRange": 149.54999999999927,
-    "atr14": 37.713948737764426,
+    "atr14": 37.72318048590051,
     "distFromDayLow": 112.40000000000146,
     "distFromDayHigh": 20.649999999997817,
     "isNearDayLow": false,
@@ -545,7 +545,7 @@
     ]
   },
   {
-    "index": 86,
+    "index": 82,
     "timestamp": 1790755200000,
     "timeIST": "13:30",
     "dateIST": "30 Sept 2026",
@@ -562,7 +562,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22659.8,
     "dayRange": 149.54999999999927,
-    "atr14": 39.47366668506686,
+    "atr14": 39.4822390226218,
     "distFromDayLow": 66.35000000000218,
     "distFromDayHigh": 20.849999999998545,
     "isNearDayLow": false,
@@ -577,7 +577,7 @@
     ]
   },
   {
-    "index": 87,
+    "index": 83,
     "timestamp": 1790756100000,
     "timeIST": "13:45",
     "dateIST": "30 Sept 2026",
@@ -594,7 +594,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22659.8,
     "dayRange": 149.54999999999927,
-    "atr14": 39.19697620756224,
+    "atr14": 39.204936235291825,
     "distFromDayLow": 55.04999999999927,
     "distFromDayHigh": 58.89999999999782,
     "isNearDayLow": false,
@@ -609,7 +609,7 @@
     ]
   },
   {
-    "index": 88,
+    "index": 84,
     "timestamp": 1790757000000,
     "timeIST": "14:00",
     "dateIST": "30 Sept 2026",
@@ -626,7 +626,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22659.8,
     "dayRange": 149.54999999999927,
-    "atr14": 38.82933504987943,
+    "atr14": 38.83672650419976,
     "distFromDayLow": 47.79999999999927,
     "distFromDayHigh": 67.69999999999709,
     "isNearDayLow": false,
@@ -641,7 +641,7 @@
     ]
   },
   {
-    "index": 89,
+    "index": 85,
     "timestamp": 1790757900000,
     "timeIST": "14:15",
     "dateIST": "30 Sept 2026",
@@ -658,7 +658,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22635.3,
     "dayRange": 174.04999999999927,
-    "atr14": 41.38438254631677,
+    "atr14": 41.39124603961422,
     "distFromDayLow": 0,
     "distFromDayHigh": 99.44999999999709,
     "isNearDayLow": true,
@@ -673,7 +673,7 @@
     ]
   },
   {
-    "index": 90,
+    "index": 86,
     "timestamp": 1790758800000,
     "timeIST": "14:30",
     "dateIST": "30 Sept 2026",
@@ -690,7 +690,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22595.2,
     "dayRange": 214.14999999999782,
-    "atr14": 42.31406950729399,
+    "atr14": 42.32044275107019,
     "distFromDayLow": 0,
     "distFromDayHigh": 159.75,
     "isNearDayLow": true,
@@ -705,7 +705,7 @@
     ]
   },
   {
-    "index": 91,
+    "index": 87,
     "timestamp": 1790759700000,
     "timeIST": "14:45",
     "dateIST": "30 Sept 2026",
@@ -722,7 +722,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22595.2,
     "dayRange": 214.14999999999782,
-    "atr14": 42.491635971058656,
+    "atr14": 42.49755398313655,
     "distFromDayLow": 14.799999999999272,
     "distFromDayHigh": 154.54999999999927,
     "isNearDayLow": true,
@@ -737,7 +737,7 @@
     ]
   },
   {
-    "index": 92,
+    "index": 88,
     "timestamp": 1790760600000,
     "timeIST": "15:00",
     "dateIST": "30 Sept 2026",
@@ -754,7 +754,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22595.2,
     "dayRange": 214.14999999999782,
-    "atr14": 43.702947687411665,
+    "atr14": 43.708442984341126,
     "distFromDayLow": 5.75,
     "distFromDayHigh": 148.9499999999971,
     "isNearDayLow": true,
@@ -769,7 +769,7 @@
     ]
   },
   {
-    "index": 93,
+    "index": 89,
     "timestamp": 1790761500000,
     "timeIST": "15:15",
     "dateIST": "30 Sept 2026",
@@ -786,7 +786,7 @@
     "dayHigh": 22809.35,
     "dayLow": 22595.2,
     "dayRange": 214.14999999999782,
-    "atr14": 40.97773713831078,
+    "atr14": 40.98283991403099,
     "distFromDayLow": 25.25,
     "distFromDayHigh": 188.89999999999782,
     "isNearDayLow": true,
@@ -801,7 +801,7 @@
     ]
   },
   {
-    "index": 94,
+    "index": 90,
     "timestamp": 1790826300000,
     "timeIST": "09:15",
     "dateIST": "01 Oct 2026",
@@ -818,7 +818,7 @@
     "dayHigh": 22590.05,
     "dayLow": 22508.05,
     "dayRange": 82,
-    "atr14": 46.07932734271726,
+    "atr14": 46.08406563445745,
     "distFromDayLow": 0,
     "distFromDayHigh": 0,
     "isNearDayLow": true,
@@ -833,7 +833,7 @@
     ]
   },
   {
-    "index": 95,
+    "index": 91,
     "timestamp": 1790827200000,
     "timeIST": "09:30",
     "dateIST": "01 Oct 2026",
@@ -850,7 +850,7 @@
     "dayHigh": 22590.05,
     "dayLow": 22508.05,
     "dayRange": 82,
-    "atr14": 45.77723253252306,
+    "atr14": 45.781632374853245,
     "distFromDayLow": 28.600000000002183,
     "distFromDayHigh": 11.549999999999272,
     "isNearDayLow": true,
@@ -865,7 +865,7 @@
     ]
   },
   {
-    "index": 96,
+    "index": 92,
     "timestamp": 1790828100000,
     "timeIST": "09:45",
     "dateIST": "01 Oct 2026",
@@ -882,7 +882,7 @@
     "dayHigh": 22590.05,
     "dayLow": 22508.05,
     "dayRange": 82,
-    "atr14": 45.261001637342794,
+    "atr14": 45.265087205220816,
     "distFromDayLow": 24.5,
     "distFromDayHigh": 18.950000000000728,
     "isNearDayLow": true,
@@ -897,7 +897,7 @@
     ]
   },
   {
-    "index": 97,
+    "index": 93,
     "timestamp": 1790829000000,
     "timeIST": "10:00",
     "dateIST": "01 Oct 2026",
@@ -914,7 +914,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22508.05,
     "dayRange": 102.54999999999927,
-    "atr14": 45.27807294896117,
+    "atr14": 45.28186669056219,
     "distFromDayLow": 57.04999999999927,
     "distFromDayHigh": 0,
     "isNearDayLow": false,
@@ -929,7 +929,7 @@
     "skipReasons": []
   },
   {
-    "index": 98,
+    "index": 94,
     "timestamp": 1790829900000,
     "timeIST": "10:15",
     "dateIST": "01 Oct 2026",
@@ -946,7 +946,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22508.05,
     "dayRange": 102.54999999999927,
-    "atr14": 44.922496309749604,
+    "atr14": 44.926019069807694,
     "distFromDayLow": 34.95000000000073,
     "distFromDayHigh": 27.299999999999272,
     "isNearDayLow": true,
@@ -961,7 +961,7 @@
     "skipReasons": []
   },
   {
-    "index": 99,
+    "index": 95,
     "timestamp": 1790830800000,
     "timeIST": "10:30",
     "dateIST": "01 Oct 2026",
@@ -978,7 +978,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22508.05,
     "dayRange": 102.54999999999927,
-    "atr14": 44.313746573339024,
+    "atr14": 44.31701770767868,
     "distFromDayLow": 49.95000000000073,
     "distFromDayHigh": 16.19999999999709,
     "isNearDayLow": false,
@@ -993,7 +993,7 @@
     ]
   },
   {
-    "index": 100,
+    "index": 96,
     "timestamp": 1790831700000,
     "timeIST": "10:45",
     "dateIST": "01 Oct 2026",
@@ -1010,7 +1010,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22508.05,
     "dayRange": 102.54999999999927,
-    "atr14": 43.54490753238618,
+    "atr14": 43.54794501427301,
     "distFromDayLow": 39.85000000000218,
     "distFromDayHigh": 29.149999999997817,
     "isNearDayLow": true,
@@ -1025,7 +1025,7 @@
     ]
   },
   {
-    "index": 101,
+    "index": 97,
     "timestamp": 1790832600000,
     "timeIST": "11:00",
     "dateIST": "01 Oct 2026",
@@ -1042,7 +1042,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22508.05,
     "dayRange": 102.54999999999927,
-    "atr14": 42.60955699435839,
+    "atr14": 42.6123775132533,
     "distFromDayLow": 24.600000000002183,
     "distFromDayHigh": 47.5,
     "isNearDayLow": true,
@@ -1057,7 +1057,7 @@
     ]
   },
   {
-    "index": 102,
+    "index": 98,
     "timestamp": 1790833500000,
     "timeIST": "11:15",
     "dateIST": "01 Oct 2026",
@@ -1074,7 +1074,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22508.05,
     "dayRange": 102.54999999999927,
-    "atr14": 42.133874351904275,
+    "atr14": 42.13649340516383,
     "distFromDayLow": 21.650000000001455,
     "distFromDayHigh": 44.94999999999709,
     "isNearDayLow": true,
@@ -1089,7 +1089,7 @@
     ]
   },
   {
-    "index": 103,
+    "index": 99,
     "timestamp": 1790834400000,
     "timeIST": "11:30",
     "dateIST": "01 Oct 2026",
@@ -1106,7 +1106,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22508.05,
     "dayRange": 102.54999999999927,
-    "atr14": 41.83145475533979,
+    "atr14": 41.83388673336652,
     "distFromDayLow": 27.75,
     "distFromDayHigh": 36.89999999999782,
     "isNearDayLow": true,
@@ -1121,7 +1121,7 @@
     ]
   },
   {
-    "index": 104,
+    "index": 100,
     "timestamp": 1790835300000,
     "timeIST": "11:45",
     "dateIST": "01 Oct 2026",
@@ -1138,7 +1138,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22508.05,
     "dayRange": 102.54999999999927,
-    "atr14": 40.893493701387,
+    "atr14": 40.89575196669754,
     "distFromDayLow": 35.900000000001455,
     "distFromDayHigh": 37.94999999999709,
     "isNearDayLow": true,
@@ -1153,7 +1153,7 @@
     ]
   },
   {
-    "index": 105,
+    "index": 101,
     "timestamp": 1790836200000,
     "timeIST": "12:00",
     "dateIST": "01 Oct 2026",
@@ -1170,7 +1170,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22500.8,
     "dayRange": 109.79999999999927,
-    "atr14": 43.218958437002264,
+    "atr14": 43.22105539764777,
     "distFromDayLow": 0,
     "distFromDayHigh": 36.349999999998545,
     "isNearDayLow": true,
@@ -1185,7 +1185,7 @@
     ]
   },
   {
-    "index": 106,
+    "index": 102,
     "timestamp": 1790837100000,
     "timeIST": "12:15",
     "dateIST": "01 Oct 2026",
@@ -1202,7 +1202,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22459.25,
     "dayRange": 151.34999999999854,
-    "atr14": 45.13546140578776,
+    "atr14": 45.13740858353002,
     "distFromDayLow": 0,
     "distFromDayHigh": 81.29999999999927,
     "isNearDayLow": true,
@@ -1217,7 +1217,7 @@
     ]
   },
   {
-    "index": 107,
+    "index": 103,
     "timestamp": 1790838000000,
     "timeIST": "12:30",
     "dateIST": "01 Oct 2026",
@@ -1234,7 +1234,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22432.9,
     "dayRange": 177.6999999999971,
-    "atr14": 45.79364273394567,
+    "atr14": 45.79545082756348,
     "distFromDayLow": 0,
     "distFromDayHigh": 123.34999999999854,
     "isNearDayLow": true,
@@ -1249,7 +1249,7 @@
     ]
   },
   {
-    "index": 108,
+    "index": 104,
     "timestamp": 1790838900000,
     "timeIST": "12:45",
     "dateIST": "01 Oct 2026",
@@ -1266,7 +1266,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22301.3,
     "dayRange": 309.2999999999993,
-    "atr14": 51.979811110092506,
+    "atr14": 51.981490054166194,
     "distFromDayLow": 0,
     "distFromDayHigh": 177.39999999999782,
     "isNearDayLow": true,
@@ -1281,7 +1281,7 @@
     ]
   },
   {
-    "index": 109,
+    "index": 105,
     "timestamp": 1790839800000,
     "timeIST": "13:00",
     "dateIST": "01 Oct 2026",
@@ -1298,7 +1298,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22301.3,
     "dayRange": 309.2999999999993,
-    "atr14": 53.3026817450859,
+    "atr14": 53.3042407645829,
     "distFromDayLow": 16.5,
     "distFromDayHigh": 222.29999999999927,
     "isNearDayLow": true,
@@ -1313,7 +1313,7 @@
     ]
   },
   {
-    "index": 110,
+    "index": 106,
     "timestamp": 1790840700000,
     "timeIST": "13:15",
     "dateIST": "01 Oct 2026",
@@ -1330,7 +1330,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22301.3,
     "dayRange": 309.2999999999993,
-    "atr14": 53.13463304900839,
+    "atr14": 53.13608070996988,
     "distFromDayLow": 20.549999999999272,
     "distFromDayHigh": 238.29999999999927,
     "isNearDayLow": true,
@@ -1345,7 +1345,7 @@
     ]
   },
   {
-    "index": 111,
+    "index": 107,
     "timestamp": 1790841600000,
     "timeIST": "13:30",
     "dateIST": "01 Oct 2026",
@@ -1362,7 +1362,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22273.65,
     "dayRange": 336.9499999999971,
-    "atr14": 55.76073068836478,
+    "atr14": 55.76207494497187,
     "distFromDayLow": 0,
     "distFromDayHigh": 247.04999999999927,
     "isNearDayLow": true,
@@ -1377,7 +1377,7 @@
     ]
   },
   {
-    "index": 112,
+    "index": 108,
     "timestamp": 1790842500000,
     "timeIST": "13:45",
     "dateIST": "01 Oct 2026",
@@ -1394,7 +1394,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22247.4,
     "dayRange": 363.1999999999971,
-    "atr14": 55.82067849633862,
+    "atr14": 55.82192673461663,
     "distFromDayLow": 0,
     "distFromDayHigh": 306.59999999999854,
     "isNearDayLow": true,
@@ -1409,7 +1409,7 @@
     ]
   },
   {
-    "index": 113,
+    "index": 109,
     "timestamp": 1790843400000,
     "timeIST": "14:00",
     "dateIST": "01 Oct 2026",
@@ -1426,7 +1426,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22217.3,
     "dayRange": 393.2999999999993,
-    "atr14": 58.10848717517173,
+    "atr14": 58.10964625357274,
     "distFromDayLow": 0,
     "distFromDayHigh": 305.4499999999971,
     "isNearDayLow": true,
@@ -1441,7 +1441,7 @@
     ]
   },
   {
-    "index": 114,
+    "index": 110,
     "timestamp": 1790844300000,
     "timeIST": "14:15",
     "dateIST": "01 Oct 2026",
@@ -1458,7 +1458,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22217.3,
     "dayRange": 393.2999999999993,
-    "atr14": 57.36859523408804,
+    "atr14": 57.36967152117469,
     "distFromDayLow": 49.10000000000218,
     "distFromDayHigh": 296.4499999999971,
     "isNearDayLow": true,
@@ -1473,7 +1473,7 @@
     ]
   },
   {
-    "index": 115,
+    "index": 111,
     "timestamp": 1790845200000,
     "timeIST": "14:30",
     "dateIST": "01 Oct 2026",
@@ -1490,7 +1490,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22217.3,
     "dayRange": 393.2999999999993,
-    "atr14": 58.36012414593889,
+    "atr14": 58.361123555376494,
     "distFromDayLow": 89.90000000000146,
     "distFromDayHigh": 232.14999999999782,
     "isNearDayLow": true,
@@ -1505,7 +1505,7 @@
     ]
   },
   {
-    "index": 116,
+    "index": 112,
     "timestamp": 1790846100000,
     "timeIST": "14:45",
     "dateIST": "01 Oct 2026",
@@ -1522,7 +1522,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22217.3,
     "dayRange": 393.2999999999993,
-    "atr14": 59.29511527837188,
+    "atr14": 59.296043301421086,
     "distFromDayLow": 130.5,
     "distFromDayHigh": 191.34999999999854,
     "isNearDayLow": false,
@@ -1537,7 +1537,7 @@
     ]
   },
   {
-    "index": 117,
+    "index": 113,
     "timestamp": 1790847000000,
     "timeIST": "15:00",
     "dateIST": "01 Oct 2026",
@@ -1554,7 +1554,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22217.3,
     "dayRange": 393.2999999999993,
-    "atr14": 59.72760704420235,
+    "atr14": 59.72846877989091,
     "distFromDayLow": 165.85000000000218,
     "distFromDayHigh": 162.09999999999854,
     "isNearDayLow": false,
@@ -1569,7 +1569,7 @@
     ]
   },
   {
-    "index": 118,
+    "index": 114,
     "timestamp": 1790847900000,
     "timeIST": "15:15",
     "dateIST": "01 Oct 2026",
@@ -1586,7 +1586,7 @@
     "dayHigh": 22610.6,
     "dayLow": 22217.3,
     "dayRange": 393.2999999999993,
-    "atr14": 57.15063511247346,
+    "atr14": 57.151435295612835,
     "distFromDayLow": 204.65000000000146,
     "distFromDayHigh": 188.64999999999782,
     "isNearDayLow": false,
