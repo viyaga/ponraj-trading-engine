@@ -4,8 +4,8 @@ import util from "util";
 import { getISTDetails, isIndianMarketTime, IST_OFFSET_MS } from "./indianMarketTime";
 
 const LOG_DIR = path.join(process.cwd(), "logs");
-const MAX_LOG_FILES = Math.max(5, parseInt(process.env.MAX_LOG_FILES || "20", 10));
-const FILE_PATTERN = /^cycle_\d{8}_\d{6}\.log$/; // matches cycle_YYYYMMDD_HHmmss.log
+const MAX_LOG_FILES = Math.max(5, parseInt(process.env.MAX_LOG_FILES || "30", 10));
+const FILE_PATTERN = /^cycle_.*\.log$/; // matches cycle_YYYY-MM-DD_HH-mm-ss_IST.log and legacy names
 
 let activeLogFile: string | null = null;
 let originalLog: typeof console.log | null = null;
@@ -131,17 +131,28 @@ function rotateLogs(): void {
                     time = fs.statSync(filePath).mtimeMs;
                 } catch {
                     // fall back to parsing IST timestamp from filename if fs.stat fails
-                    const match = f.match(/cycle_(\d{8})_(\d{6})\.log/);
-                    if (match) {
-                        const dateStr = match[1];
-                        const timeStr = match[2];
-                        const year = parseInt(dateStr.substring(0, 4), 10);
-                        const month = parseInt(dateStr.substring(4, 6), 10) - 1;
-                        const day = parseInt(dateStr.substring(6, 8), 10);
-                        const hour = parseInt(timeStr.substring(0, 2), 10);
-                        const min = parseInt(timeStr.substring(2, 4), 10);
-                        const sec = parseInt(timeStr.substring(4, 6), 10);
-                        time = Date.UTC(year, month, day, hour, min, sec) - IST_OFFSET_MS;
+                    const ddmmyyMatch = f.match(/cycle_(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(AM|PM)/i);
+                    if (ddmmyyMatch) {
+                        const day = parseInt(ddmmyyMatch[1], 10);
+                        const month = parseInt(ddmmyyMatch[2], 10) - 1;
+                        const year = 2000 + parseInt(ddmmyyMatch[3], 10);
+                        let hour = parseInt(ddmmyyMatch[4], 10);
+                        const min = parseInt(ddmmyyMatch[5], 10);
+                        const ampm = ddmmyyMatch[6].toUpperCase();
+                        if (ampm === "PM" && hour < 12) hour += 12;
+                        if (ampm === "AM" && hour === 12) hour = 0;
+                        time = Date.UTC(year, month, day, hour, min, 0) - IST_OFFSET_MS;
+                    } else {
+                        const match = f.match(/cycle_(\d{4})-?(\d{2})-?(\d{2})[_-](\d{2})-?(\d{2})-?(\d{2})/);
+                        if (match) {
+                            const year = parseInt(match[1], 10);
+                            const month = parseInt(match[2], 10) - 1;
+                            const day = parseInt(match[3], 10);
+                            const hour = parseInt(match[4], 10);
+                            const min = parseInt(match[5], 10);
+                            const sec = parseInt(match[6], 10);
+                            time = Date.UTC(year, month, day, hour, min, sec) - IST_OFFSET_MS;
+                        }
                     }
                 }
                 return { name: f, path: filePath, time };

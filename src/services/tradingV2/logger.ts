@@ -1,10 +1,11 @@
 import fs from "fs";
 import path from "path";
 import util from "util";
+import { isIndianMarketTime, getISTDetails } from "../../utils/indianMarketTime";
 
 const LOG_DIR = path.join(process.cwd(), "logs");
-const MAX_DAILY_LOG_FILES = Math.max(3, parseInt(process.env.MAX_DAILY_LOGS || "7", 10));
-const DAILY_FILE_PATTERN = /^trading_\d{8}\.log$/;
+const MAX_DAILY_LOG_FILES = Math.max(3, parseInt(process.env.MAX_DAILY_LOGS || "30", 10));
+const DAILY_FILE_PATTERN = /^trading_.*\.log$/;
 let lastDailyRotateDate = "";
 
 function rotateDailyLogs(todayDateStr: string): void {
@@ -15,7 +16,7 @@ function rotateDailyLogs(todayDateStr: string): void {
         const files = fs.readdirSync(LOG_DIR);
         const dailyFiles = files
             .filter(f => DAILY_FILE_PATTERN.test(f))
-            .sort(); // Oldest YYYYMMDD first
+            .sort(); // Oldest first
         if (dailyFiles.length > MAX_DAILY_LOG_FILES) {
             const deleteCount = dailyFiles.length - MAX_DAILY_LOG_FILES;
             for (let i = 0; i < deleteCount; i++) {
@@ -32,15 +33,17 @@ function rotateDailyLogs(todayDateStr: string): void {
 }
 
 function appendToDailyLog(text: string): void {
+    // STRICT REQUIREMENT: Log files must ONLY be created/written during Indian market hours (09:15 - 15:30 IST Mon-Fri, non-holiday)
+    if (!isIndianMarketTime() && process.env.FORCE_LOG !== "true") {
+        return;
+    }
+
     try {
         if (!fs.existsSync(LOG_DIR)) {
             fs.mkdirSync(LOG_DIR, { recursive: true });
         }
-        const now = new Date();
-        const year = now.getUTCFullYear();
-        const month = String(now.getUTCMonth() + 1).padStart(2, "0");
-        const day = String(now.getUTCDate()).padStart(2, "0");
-        const dateStr = `${year}${month}${day}`;
+        const ist = getISTDetails();
+        const dateStr = ist.fileDateStr; // Market date in IST (YYYY-MM-DD_IST)
 
         // Ensure old daily logs beyond MAX_DAILY_LOG_FILES are cleaned up
         rotateDailyLogs(dateStr);
@@ -55,8 +58,8 @@ function appendToDailyLog(text: string): void {
 
 const createConsoleLogger = (serviceName: string) => {
     const log = (level: string, message: string, meta?: any) => {
-        const timestamp = new Date().toISOString();
-        let msg = `${timestamp} [${level.toUpperCase()}] [${serviceName}]: ${message}`;
+        const ist = getISTDetails();
+        let msg = `[${ist.isoDate} ${ist.displayTime}] [${level.toUpperCase()}] [${serviceName}]: ${message}`;
         if (meta !== undefined) {
             if (meta instanceof Error) {
                 msg += `\n${meta.stack || meta.message}`;

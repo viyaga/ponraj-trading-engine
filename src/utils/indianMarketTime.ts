@@ -91,11 +91,14 @@ export interface ISTDetails {
     seconds: number;      // 0-59
     dayOfWeek: number;    // 0=Sun, 1=Mon, ..., 6=Sat
     totalMinutes: number; // hours * 60 + minutes
-    dateStr: string;      // YYYYMMDD
-    timeStr: string;      // HHmmss
-    isoDate: string;      // YYYY-MM-DD
-    timestampStr: string; // YYYYMMDD_HHmmss
-    displayTime: string;  // HH:mm:ss IST
+    dateStr: string;          // YYYYMMDD
+    timeStr: string;          // HHmmss
+    isoDate: string;          // YYYY-MM-DD
+    timestampStr: string;     // YYYY-MM-DD_HH-mm-ss_IST
+    displayTime: string;      // HH:mm:ss IST
+    fileTimestampStr: string; // DD-MM-YY-hh-mm-AM
+    fileDateStr: string;      // DD-MM-YY
+    cycleFileTimestamp: string; // DD-MM-YY-hh-mm-AM (e.g. 10-09-26-10-00-AM)
 }
 
 /**
@@ -116,11 +119,17 @@ export function getISTDetails(date: Date = new Date()): ISTDetails {
     const totalMinutes = hours * 60 + minutes;
 
     const yStr   = String(year);
+    const yyStr  = String(year).slice(-2);
     const mStr   = String(month).padStart(2, '0');
     const dStr   = String(day).padStart(2, '0');
     const hStr   = String(hours).padStart(2, '0');
     const minStr = String(minutes).padStart(2, '0');
     const sStr   = String(seconds).padStart(2, '0');
+
+    const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+    const h12Str = String(hour12).padStart(2, '0');
+    const ampm   = hours >= 12 ? 'PM' : 'AM';
+    const cycleFileTimestamp = `${dStr}-${mStr}-${yyStr}-${h12Str}-${minStr}-${ampm}`;
 
     return {
         year,
@@ -134,8 +143,11 @@ export function getISTDetails(date: Date = new Date()): ISTDetails {
         dateStr: `${yStr}${mStr}${dStr}`,
         timeStr: `${hStr}${minStr}${sStr}`,
         isoDate: `${yStr}-${mStr}-${dStr}`,
-        timestampStr: `${yStr}${mStr}${dStr}_${hStr}${minStr}${sStr}`,
+        timestampStr: cycleFileTimestamp,
         displayTime: `${hStr}:${minStr}:${sStr} IST`,
+        fileTimestampStr: cycleFileTimestamp,
+        fileDateStr: `${dStr}-${mStr}-${yyStr}`,
+        cycleFileTimestamp,
     };
 }
 

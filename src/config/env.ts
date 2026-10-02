@@ -55,8 +55,8 @@ const env: EnvConfig = {
     angelOneClientCode: process.env.ANGEL_ONE_CLIENT_CODE || '',
     angelOnePassword: process.env.ANGEL_ONE_PASSWORD || '',
     angelOneTotpKey: process.env.ANGEL_ONE_TOTP_KEY || '',
-    maxLogFiles: Math.max(5, parseInt(process.env.MAX_LOG_FILES || '20', 10)),
-    maxDailyLogs: Math.max(3, parseInt(process.env.MAX_DAILY_LOGS || '7', 10)),
+    maxLogFiles: Math.max(5, parseInt(process.env.MAX_LOG_FILES || '30', 10)),
+    maxDailyLogs: Math.max(3, parseInt(process.env.MAX_DAILY_LOGS || '30', 10)),
 };
 
 export default env;
