@@ -32,6 +32,7 @@ interface EnvConfig {
     serverIp: string;
     isTesting: boolean;
     useCacheCandle: boolean;
+    dryRun: boolean;
     cacheCandleTargetTime: string;
     angelOneApiKey?: string;
     angelOneClientCode?: string;
@@ -48,8 +49,9 @@ const env: EnvConfig = {
     payloadUrl: process.env.PAYLOAD_URL || 'http://localhost:4000',
     payloadApiKey: process.env.PAYLOAD_API_KEY || '',
     serverIp: process.env.SERVER_IP || '127.0.0.1',
-    isTesting: process.env.IS_TESTING === 'true',
-    useCacheCandle: process.env.USE_CACHE_CANDLE === 'true' || process.env.USE_CACHED_CANDLES === 'true',
+    isTesting: (process.env.IS_TESTING || '').trim() === 'true',
+    useCacheCandle: (process.env.USE_CACHE_CANDLE || '').trim() === 'true' || (process.env.USE_CACHED_CANDLES || '').trim() === 'true',
+    dryRun: (process.env.DRY_RUN || '').trim() === 'true',
     cacheCandleTargetTime: process.env.CACHE_CANDLE_TARGET_TIME || '2026-10-01 10:00',
     angelOneApiKey: process.env.ANGEL_ONE_API_KEY || '',
     angelOneClientCode: process.env.ANGEL_ONE_CLIENT_CODE || '',

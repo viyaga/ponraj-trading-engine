@@ -2,11 +2,29 @@ import fs from "fs";
 import path from "path";
 import util from "util";
 import { isIndianMarketTime, getISTDetails } from "../../utils/indianMarketTime";
+import env from "../../config/env";
+import { TradingConfig } from "./config";
 
 const LOG_DIR = path.join(process.cwd(), "logs");
 const MAX_DAILY_LOG_FILES = Math.max(3, parseInt(process.env.MAX_DAILY_LOGS || "30", 10));
 const DAILY_FILE_PATTERN = /^trading_.*\.log$/;
 let lastDailyRotateDate = "";
+
+/**
+ * Checks whether logging to disk is permitted outside official Indian market hours.
+ * Permitted if: USE_CACHE_CANDLE is true, IS_TESTING is true, DRY_RUN is true, or FORCE_LOG is true.
+ */
+export function isLoggingAllowedOutsideMarket(): boolean {
+    if (process.env.FORCE_LOG === "true") return true;
+    if (env.useCacheCandle || (process.env.USE_CACHE_CANDLE || "").trim() === "true" || (process.env.USE_CACHED_CANDLES || "").trim() === "true") return true;
+    if (env.isTesting || (process.env.IS_TESTING || "").trim() === "true") return true;
+    if (env.dryRun || (process.env.DRY_RUN || "").trim() === "true") return true;
+    try {
+        const activeConfig = TradingConfig?.configStore?.getStore();
+        if (activeConfig?.DRY_RUN || activeConfig?.USE_CACHE_CANDLE) return true;
+    } catch {}
+    return false;
+}
 
 function rotateDailyLogs(todayDateStr: string): void {
     if (lastDailyRotateDate === todayDateStr) return;
@@ -33,8 +51,8 @@ function rotateDailyLogs(todayDateStr: string): void {
 }
 
 function appendToDailyLog(text: string): void {
-    // STRICT REQUIREMENT: Log files must ONLY be created/written during Indian market hours (09:15 - 15:30 IST Mon-Fri, non-holiday)
-    if (!isIndianMarketTime() && process.env.FORCE_LOG !== "true") {
+    // If outside Indian market hours, log anytime when cache candle, is testing, or dry run is true (or forced)
+    if (!isIndianMarketTime() && !isLoggingAllowedOutsideMarket()) {
         return;
     }
 
@@ -43,7 +61,7 @@ function appendToDailyLog(text: string): void {
             fs.mkdirSync(LOG_DIR, { recursive: true });
         }
         const ist = getISTDetails();
-        const dateStr = ist.fileDateStr; // Market date in IST (YYYY-MM-DD_IST)
+        const dateStr = ist.dateStr; // Market date in IST as YYYYMMDD (e.g. trading_20261003.log)
 
         // Ensure old daily logs beyond MAX_DAILY_LOG_FILES are cleaned up
         rotateDailyLogs(dateStr);

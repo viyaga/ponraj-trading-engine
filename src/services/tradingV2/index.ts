@@ -100,8 +100,8 @@ export class TradingV2 {
         try {
             // ── 1. Market Hours Guard ─────────────────────────────────────
             if (!isNSEMarketOpen()) {
-                if (env.isTesting || env.useCacheCandle || c.USE_CACHE_CANDLE) {
-                    tradingCronLogger.info(`${tag} ⚠️ [TEST/CACHE_CANDLE OVERRIDE] Overriding Indian market hours guard — proceeding with cycle in test/cache mode`);
+                if (env.isTesting || env.useCacheCandle || c.USE_CACHE_CANDLE || c.DRY_RUN || env.dryRun) {
+                    tradingCronLogger.info(`${tag} ⚠️ [TEST/CACHE/DRY_RUN OVERRIDE] Overriding Indian market hours guard — proceeding with cycle in test/cache/dry-run mode`);
                 } else {
                     skipTradingLogger.info(
                         `${tag} ⏸️ SKIP: Indian stock market is CLOSED. Trading hours are Mon-Fri 09:15 to 15:30 IST (excl. holidays). (Current IST: ${istTimeStr})`
@@ -730,10 +730,10 @@ export class TradingV2 {
                 orderId = orderResult.order_id;
                 tradesLogger.info(`${tag} ✅ Entry BUY order submitted to Zerodha: order_id=${orderId} | ${instrument.tradingsymbol} | Qty: ${quantity} | Strategy: ${strategyName}`);
             } catch (orderErr: any) {
-                if (env.isTesting || env.useCacheCandle || c.USE_CACHE_CANDLE) {
+                if (env.isTesting || env.useCacheCandle || c.USE_CACHE_CANDLE || c.DRY_RUN || env.dryRun) {
                     orderId = `TEST_SIM_${Date.now()}`;
                     tradesLogger.warn(
-                        `${tag} ⚠️ [TEST/CACHE_CANDLE SIMULATION] Real Zerodha order placement failed (${orderErr.message}). ` +
+                        `${tag} ⚠️ [TEST/CACHE/DRY_RUN SIMULATION] Real Zerodha order placement failed (${orderErr.message}). ` +
                         `Proceeding with simulated execution id ${orderId} to complete trade record.`
                     );
                 } else {

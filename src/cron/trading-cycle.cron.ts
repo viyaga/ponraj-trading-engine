@@ -90,8 +90,8 @@ export const executeTradingCycle = async (): Promise<void> => {
 
     // ── 1. Indian Market Hours Guard (Strictly Mon-Fri 09:15 - 15:30 IST, non-holiday) ──
     if (!isIndianMarketTime()) {
-        if (env.isTesting || env.useCacheCandle) {
-            tradingCronLogger.info(`[TradingCron] ⚠️ [TEST/CACHE_CANDLE OVERRIDE] Indian market is officially closed — proceeding in test/cache mode`);
+        if (env.isTesting || env.useCacheCandle || env.dryRun) {
+            tradingCronLogger.info(`[TradingCron] ⚠️ [TEST/CACHE/DRY_RUN OVERRIDE] Indian market is officially closed — proceeding in test/cache/dry-run mode`);
         } else {
             const ist = getISTDetails();
             tradingCronLogger.debug(`[TradingCron] Outside Indian market hours (09:15 AM - 03:30 PM IST Mon-Fri). Current IST: ${ist.isoDate} ${ist.displayTime}. Skipping cycle.`);
@@ -102,8 +102,8 @@ export const executeTradingCycle = async (): Promise<void> => {
 
     // ── 1B. Bot Trading Entry Window Check (09:30 AM - 03:15 PM IST) ──
     if (!isNSETradingHours()) {
-        if (env.isTesting || env.useCacheCandle) {
-            tradingCronLogger.info("[TradingCron] ⚠️ [TEST/CACHE_CANDLE OVERRIDE] Outside 9:30-15:15 bot entry window — proceeding in test/cache mode");
+        if (env.isTesting || env.useCacheCandle || env.dryRun) {
+            tradingCronLogger.info("[TradingCron] ⚠️ [TEST/CACHE/DRY_RUN OVERRIDE] Outside 9:30-15:15 bot entry window — proceeding in test/cache/dry-run mode");
         } else {
             const hasOpenPos = await ActivePositionTracker.hasActivePositions();
             if (!hasOpenPos) {
@@ -206,6 +206,8 @@ export const executeTradingCycle = async (): Promise<void> => {
                 isInitialRun ||
                 hasOpenPos ||
                 env.useCacheCandle ||
+                env.isTesting ||
+                env.dryRun ||
                 !isStreamConnected ||
                 hasCandlePatternBotsToEvaluate ||
                 hasUtBoundaryBotsToEvaluate ||
@@ -361,8 +363,8 @@ const tradingCycleCronJob = (): void => {
 
     // Immediate startup execution check (delayed 2s for WebSocket auto-login & DB connection to stabilize)
     setTimeout(async () => {
-        if (isIndianMarketTime()) {
-            tradingCronLogger.info("[TradingCron] ➔ Indian Market is OPEN — Triggering immediate startup trading cycle check...");
+        if (isIndianMarketTime() || env.isTesting || env.useCacheCandle || env.dryRun) {
+            tradingCronLogger.info(`[TradingCron] ➔ ${isIndianMarketTime() ? 'Indian Market is OPEN' : 'TEST/CACHE/DRY-RUN MODE ACTIVE'} — Triggering immediate startup trading cycle check...`);
             await executeTradingCycle().catch((err) => {
                 tradingCronLogger.error(`[TradingCron] Startup cycle failed: ${err.message}`, { error: err });
             });

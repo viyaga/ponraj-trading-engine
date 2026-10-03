@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import util from "util";
 import { getISTDetails, isIndianMarketTime, IST_OFFSET_MS } from "./indianMarketTime";
+import { isLoggingAllowedOutsideMarket } from "../services/tradingV2/logger";
 
 const LOG_DIR = path.join(process.cwd(), "logs");
 const MAX_LOG_FILES = Math.max(5, parseInt(process.env.MAX_LOG_FILES || "30", 10));
@@ -15,12 +16,12 @@ let activeLoggingDepth = 0;
 
 /**
  * Starts cycle logging by creating a log file for the current cycle and intercepting console output.
- * STRICT REQUIREMENT: Cycle logs are ONLY created during Indian market time (09:15 - 15:30 IST, Mon-Fri, non-holiday).
- * Outside Indian market time, cycle logging is cleanly skipped so unnecessary log files are not produced.
+ * STRICT REQUIREMENT: Cycle logs are ONLY created during Indian market time (09:15 - 15:30 IST, Mon-Fri, non-holiday),
+ * UNLESS in test mode, cache candle mode, dry run mode, or explicitly forced.
  */
 export function startCycleLogging(options?: { force?: boolean }): void {
-    // Only create cycle logs during Indian market hours, unless explicitly forced
-    if (!options?.force && !isIndianMarketTime()) {
+    // Only create cycle logs during Indian market hours, unless explicitly forced or in test/cache/dry-run mode
+    if (!options?.force && !isIndianMarketTime() && !isLoggingAllowedOutsideMarket()) {
         return;
     }
 
