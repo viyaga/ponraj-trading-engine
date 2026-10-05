@@ -58,16 +58,19 @@ export class MarketDataService {
                     // If user specified a target time, slice candles up to that target:
                     const targetTime = config?.CACHE_CANDLE_TARGET_TIME ?? env.cacheCandleTargetTime;
                     if (targetTime) {
-                        const targetIdx = sorted.findIndex(c => {
+                        let targetIdx = -1;
+                        for (let i = sorted.length - 1; i >= 0; i--) {
+                            const c = sorted[i];
                             const ist = new Date(c.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
                             const iso = new Date(c.timestamp).toISOString();
-                            return ist.includes(targetTime) || iso.includes(targetTime);
-                        });
+                            if (ist.includes(targetTime) || iso.includes(targetTime)) {
+                                targetIdx = i;
+                                break;
+                            }
+                        }
 
                         if (targetIdx !== -1) {
-                            // Include target candle and next candle so that breakdown/breakout confirmation is present
-                            const endIdx = Math.min(sorted.length, targetIdx + 2);
-                            const sliced = sorted.slice(0, endIdx);
+                            const sliced = sorted.slice(0, targetIdx + 1);
                             const targetCandle = sorted[targetIdx];
                             const candleTimeStr = new Date(targetCandle.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
                             tradingCronLogger.info(`[MarketDataService] 📁 USE_CACHE_CANDLE=true: Loaded ${sliced.length} cached candles up to target [${candleTimeStr} IST] for ${index}`);
