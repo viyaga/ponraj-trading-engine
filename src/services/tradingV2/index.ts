@@ -256,13 +256,13 @@ export class TradingV2 {
                         signalCandleTimestamp: candleResult.signalCandleTimestamp,
                     }) : null;
 
-                    if (alreadyTraded && !env.isTesting && !env.useCacheCandle && !c.USE_CACHE_CANDLE) {
+                    if (alreadyTraded) {
                         const candleTimeStr = candleResult.signalCandleTimestamp
                             ? new Date(candleResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
                             : 'unknown';
                         const skipMsg = `CandlePattern (15m): Signal on candle [${candleTimeStr} IST] was already executed for bot ${c.id}`;
                         skipReasons.push(skipMsg);
-                        tradingCronLogger.info(`${tag} ⏸️ [CandlePattern 15m] Candle [${candleTimeStr} IST] already traded — skipping duplicate`);
+                        tradingCronLogger.info(`${tag} ⏸️ [CandlePattern 15m] Candle [${candleTimeStr} IST] already traded — skipping duplicate (enforced across all modes)`);
                     } else {
                         chosenSignal = candleResult.signal;
                         chosenOptionType = candleResult.optionType;
@@ -412,24 +412,14 @@ export class TradingV2 {
                                 signalCandleTimestamp: utResult.signalCandleTimestamp,
                             }) : null;
 
-                            if (alreadyTraded && !env.isTesting) {
+                            if (alreadyTraded) {
                                 const candleTimeStr = utResult.signalCandleTimestamp
                                     ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
                                     : 'unknown';
                                 const skipMsg = `UT Bot (1H): Signal on candle [${candleTimeStr} IST] was already executed for bot ${c.id}`;
                                 skipReasons.push(skipMsg);
-                                tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] Candle [${candleTimeStr} IST] already traded — skipping duplicate (${tradeOnCloseNow ? 'CANDLE_CLOSE' : 'IMMEDIATE'} mode)`);
+                                tradingCronLogger.info(`${tag} ⏸️ [UTBot 1H] Candle [${candleTimeStr} IST] already traded — skipping duplicate (${tradeOnCloseNow ? 'CANDLE_CLOSE' : 'IMMEDIATE'} mode, enforced across all modes)`);
                             } else {
-                                if (alreadyTraded && env.isTesting) {
-                                    const candleTimeStr = utResult.signalCandleTimestamp
-                                        ? new Date(utResult.signalCandleTimestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false })
-                                        : 'unknown';
-                                    tradingCronLogger.warn(
-                                        `${tag} ⚠️ [IS_TESTING OVERRIDE] Duplicate-trade guard BYPASSED — candle [${candleTimeStr} IST] was already traded, ` +
-                                        `but IS_TESTING=true forces re-execution to test the full order pipeline. ` +
-                                        `THIS WILL PLACE A SECOND REAL ORDER ON ZERODHA.`
-                                    );
-                                }
                                 chosenSignal = utResult.signal;
                                 chosenOptionType = utResult.optionType;
                                 chosenATR = utResult.atr;
@@ -555,12 +545,8 @@ export class TradingV2 {
                 return;
             }
             if (hasOpenPos) {
-                if (env.isTesting) {
-                    tradingCronLogger.warn(`${tag} ⚠️ [IS_TESTING=true] Overriding open position check (open position exists) — continuing test cycle`);
-                } else {
-                    skipTradingLogger.info(`${tag} ⏸️ SKIP: Open position already exists for this bot (cannot open multiple concurrent positions)`);
-                    return;
-                }
+                skipTradingLogger.info(`${tag} ⏸️ SKIP: Open/pending position already exists for this bot (cannot open multiple concurrent positions) — enforced across all modes (including testing & cache)`);
+                return;
             }
             if (dailyLossHit) {
                 if (env.isTesting) {
@@ -712,6 +698,12 @@ export class TradingV2 {
             );
 
             // ── 11A. Place Primary Entry BUY Order on Zerodha ─────────────────
+            const activePosGuard = await Data.hasOpenPosition(c.id);
+            if (activePosGuard) {
+                tradesLogger.warn(`${tag} 🛡️ CRITICAL ABORT: Open or pending order already exists right before order placement! Aborting execution to prevent duplicate order.`);
+                return;
+            }
+
             let orderId: string | null = null;
             try {
                 const orderResult = await kite.placeOrder({

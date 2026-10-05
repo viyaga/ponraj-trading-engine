@@ -233,11 +233,7 @@ export class Data {
     // ─── Open position check ──────────────────────────────────────────────────
 
     static async hasOpenPosition(tradingBotId: string): Promise<boolean> {
-        // Fast-path: if in-memory tracker confirms no bot has any open position, return false instantly (0 DB queries)
-        const anyOpen = await ActivePositionTracker.hasActivePositions();
-        if (!anyOpen) return false;
-
         const st = await TradeState.findOne({ tradingBotId, status: { $in: ['open', 'entry_pending'] } });
-        return !!(st?.entryOrderId);
+        return !!st;
     }
 }

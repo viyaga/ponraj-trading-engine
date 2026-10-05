@@ -202,8 +202,8 @@ export class TriggerManagerService {
                         signalCandleTimestamp: lastBar.timestamp,
                     });
 
-                    if (alreadyTraded && !env.isTesting) {
-                        tradingCronLogger.info(`[TriggerManager:${c.id}] ⏸️ Candle [${barTime} IST] already executed — skipping duplicate candle-close trade.`);
+                    if (alreadyTraded) {
+                        tradingCronLogger.info(`[TriggerManager:${c.id}] ⏸️ Candle [${barTime} IST] already executed — skipping duplicate candle-close trade (enforced across all modes).`);
                     } else {
                         tradesLogger.info(
                             `⚡ [TriggerManager:${c.id}:${c.INDEX}] 1-HOUR CANDLE CLOSE CROSSOVER DETECTED!\n` +
