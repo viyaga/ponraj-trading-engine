@@ -223,28 +223,27 @@ export class TradingV2 {
                     `${tag} └──────────────────────────────────────────────────────────────────`
                 );
 
-                // ── IS_TESTING / USE_CACHE_CANDLE FORCE-SIGNAL OVERRIDE FOR CANDLE PATTERN ──
-                if ((env.isTesting || env.useCacheCandle || c.USE_CACHE_CANDLE) && candleResult.signal === 'NONE' && candles15m.length > 0) {
+                // ── IS_TESTING FORCE-SIGNAL OVERRIDE FOR CANDLE PATTERN ──
+                // When running with IS_TESTING=true, force a signal to test the full order execution pipeline
+                if (env.isTesting && candleResult.signal === 'NONE' && candles15m.length > 0) {
                     const lastBar = candles15m[candles15m.length - 1];
                     const isBullish = lastBar.close >= lastBar.open;
-                    // If USE_CACHE_CANDLE is enabled, generate BEAR (PE) Shooting Star signal for 01/10/2026 10:00 candle
-                    const forcedSignal: TradingSignal = (env.useCacheCandle || c.USE_CACHE_CANDLE) ? 'BEAR' : (isBullish ? 'BULL' : 'BEAR');
-                    const forcedOption: OptionType    = (env.useCacheCandle || c.USE_CACHE_CANDLE) ? 'PE' : (isBullish ? 'CE' : 'PE');
+                    const forcedSignal: TradingSignal = isBullish ? 'BULL' : 'BEAR';
+                    const forcedOption: OptionType    = isBullish ? 'CE' : 'PE';
 
                     tradingCronLogger.warn(
-                        `${tag} ⚠️⚠️⚠️ [USE_CACHE_CANDLE / IS_TESTING OVERRIDE] CandlePattern (15m) returned NONE.\n` +
-                        `${tag} ⚠️ Generating ${forcedSignal}/${forcedOption} (Shooting Star at Day High from 01/10/2026 10:00 candle).\n` +
-                        `${tag} ⚠️ THIS SIGNAL IS TRIGGERED TO TEST FULL ORDER & GTT PIPELINE (strictly 1 lot).\n` +
-                        `${tag} ⚠️ DISABLED IN PRODUCTION (IS_TESTING=false & USE_CACHE_CANDLE=false).`
+                        `${tag} ⚠️⚠️⚠️ [IS_TESTING OVERRIDE] CandlePattern (15m) returned NONE.\n` +
+                        `${tag} ⚠️ Generating forced ${forcedSignal}/${forcedOption} signal to test full order pipeline.\n` +
+                        `${tag} ⚠️ DISABLED IN PRODUCTION (IS_TESTING=false).`
                     );
 
                     candleResult.signal = forcedSignal;
                     candleResult.optionType = forcedOption;
-                    candleResult.pattern = 'SHOOTING_STAR';
+                    candleResult.pattern = isBullish ? 'HAMMER' : 'SHOOTING_STAR';
                     candleResult.score = 100;
                     candleResult.signalCandleTimestamp = lastBar.timestamp;
                     candleResult.reasons = [
-                        `[USE_CACHE_CANDLE / IS_TESTING] 01/10/2026 10:00 Shooting Star Day High Bearish Reversal (PE)`
+                        `[IS_TESTING] Forced ${forcedSignal}/${forcedOption} testing signal`
                     ];
                     candleResult.skipReasons = [];
                 }

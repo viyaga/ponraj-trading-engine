@@ -15,7 +15,7 @@ async function main() {
     await connectDB();
 
     console.log('\nStep 2: Fetching active bot configuration...');
-    const configs = await Data.fetchTradingConfigs({ limit: 1 });
+    const configs = await Data.fetchTradingConfigs({ limit: 1, offset: 0 });
     if (!configs.length) {
         console.error('No active bot configs found in database or backend!');
         process.exit(1);
@@ -44,12 +44,10 @@ async function main() {
         console.log({
             id: t._id,
             symbol: t.symbol,
-            status: t.status,
-            signal: t.signal,
-            quantity: t.quantity,
+            side: t.side,
             entryPrice: t.entryPrice,
             orderId: t.entryOrderId,
-            gttRuleId: t.gttRuleId,
+            gttRuleId: (t as any).gttRuleId,
             createdAt: t.createdAt,
         });
     }

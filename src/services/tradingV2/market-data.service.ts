@@ -55,21 +55,26 @@ export class MarketDataService {
                     const cachedCandles: Candle[] = JSON.parse(raw);
                     const sorted = [...cachedCandles].sort((a, b) => a.timestamp - b.timestamp);
 
-                    // If user specified targeting 01/10/2026 10:00:
-                    const targetTime = config?.CACHE_CANDLE_TARGET_TIME ?? env.cacheCandleTargetTime ?? '2026-10-01 10:00';
-                    const targetIdx = sorted.findIndex(c => {
-                        const ist = new Date(c.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
-                        return (ist.includes('1/10/2026') || ist.includes('01/10/2026')) && ist.includes('10:00');
-                    });
+                    // If user specified a target time, slice candles up to that target:
+                    const targetTime = config?.CACHE_CANDLE_TARGET_TIME ?? env.cacheCandleTargetTime;
+                    if (targetTime) {
+                        const targetIdx = sorted.findIndex(c => {
+                            const ist = new Date(c.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+                            const iso = new Date(c.timestamp).toISOString();
+                            return ist.includes(targetTime) || iso.includes(targetTime);
+                        });
 
-                    if (targetIdx !== -1) {
-                        // Include the 10:00 candle and next candle (10:15) so that breakdown is present
-                        const endIdx = Math.min(sorted.length, targetIdx + 2);
-                        const sliced = sorted.slice(0, endIdx);
-                        const targetCandle = sorted[targetIdx];
-                        const candleTimeStr = new Date(targetCandle.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
-                        tradingCronLogger.info(`[MarketDataService] 📁 USE_CACHE_CANDLE=true: Loaded ${sliced.length} cached candles up to target [${candleTimeStr} IST] for ${index}`);
-                        return sliced;
+                        if (targetIdx !== -1) {
+                            // Include target candle and next candle so that breakdown/breakout confirmation is present
+                            const endIdx = Math.min(sorted.length, targetIdx + 2);
+                            const sliced = sorted.slice(0, endIdx);
+                            const targetCandle = sorted[targetIdx];
+                            const candleTimeStr = new Date(targetCandle.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+                            tradingCronLogger.info(`[MarketDataService] 📁 USE_CACHE_CANDLE=true: Loaded ${sliced.length} cached candles up to target [${candleTimeStr} IST] for ${index}`);
+                            return sliced;
+                        } else {
+                            tradingCronLogger.warn(`[MarketDataService] ⚠️ USE_CACHE_CANDLE=true: Target time "${targetTime}" not found in cache. Using all ${sorted.length} candles.`);
+                        }
                     }
 
                     tradingCronLogger.info(`[MarketDataService] 📁 USE_CACHE_CANDLE=true: Loaded ${sorted.length} cached candles from ${cacheFile}`);
@@ -159,14 +164,40 @@ export class MarketDataService {
         return [...completedCandles, liveCandle];
     }
 
-    static async getSpotPrice(kite: KiteExchange, index: string, config?: ConfigType): Promise<number> {
+    static async getSpotPrice(
+        kite: KiteExchange,
+        index: string,
+        config?: ConfigType,
+        candles15m?: Candle[]
+    ): Promise<number> {
         const useCache = config?.USE_CACHE_CANDLE ?? env.useCacheCandle;
         if (useCache) {
-            // Simulated breakdown spot price for 01/10/2026 10:00 Shooting Star (Low: 22565.10):
-            // 22543.00 is the breakdown low of the confirming candle
-            const simSpot = 22543.00;
-            tradingCronLogger.info(`[MarketDataService] 📁 USE_CACHE_CANDLE=true: Using simulated breakdown spot price for ${index}: ₹${simSpot.toFixed(2)}`);
-            return simSpot;
+            // Read spot price from the latest candle in the cached candle list
+            if (candles15m && candles15m.length > 0) {
+                const latestCandle = candles15m[candles15m.length - 1];
+                tradingCronLogger.info(
+                    `[MarketDataService] 📁 USE_CACHE_CANDLE=true: Using latest cached candle close price for ${index}: ₹${latestCandle.close.toFixed(2)}`
+                );
+                return latestCandle.close;
+            }
+
+            const cacheFile = path.join(process.cwd(), 'cache', 'nifty_15m_cached.json');
+            if (fs.existsSync(cacheFile)) {
+                try {
+                    const raw = fs.readFileSync(cacheFile, 'utf8');
+                    const cachedCandles: Candle[] = JSON.parse(raw);
+                    if (cachedCandles.length > 0) {
+                        const sorted = [...cachedCandles].sort((a, b) => a.timestamp - b.timestamp);
+                        const latestCandle = sorted[sorted.length - 1];
+                        tradingCronLogger.info(
+                            `[MarketDataService] 📁 USE_CACHE_CANDLE=true: Using latest cached candle close price for ${index}: ₹${latestCandle.close.toFixed(2)}`
+                        );
+                        return latestCandle.close;
+                    }
+                } catch (e: any) {
+                    tradingCycleErrorLogger.error(`[MarketDataService] ✖ Failed reading candle cache for spot price: ${e.message}`);
+                }
+            }
         }
 
         const instrument = getIndexInstrument(index);
@@ -235,7 +266,7 @@ export class MarketDataService {
 
             // Fetch 15m candles and spot price first
             const candles15m = await this.get15mCandles(kite, c.INDEX, c);
-            const spotPrice  = await this.getSpotPrice(kite, c.INDEX, c);
+            const spotPrice  = await this.getSpotPrice(kite, c.INDEX, c, candles15m);
 
             // Fetch 1H candles ONLY if UT Bot is enabled
             let candles1h: Candle[] = [];
