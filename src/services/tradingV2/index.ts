@@ -960,15 +960,13 @@ export class TradingV2 {
 
         tradingCronLogger.info(`${tag} ➔ Monitoring active trade (${state.status.toUpperCase()}): ${state.symbol} (OrderId: ${state.entryOrderId}, Qty: ${state.quantity})...`);
 
-        // Get current order status
-        const history = await kite.getOrderHistory(state.entryOrderId);
-        const latest  = history ? history[history.length - 1] : null;
+        const isSimulated = Boolean(state.entryOrderId?.startsWith('TEST_SIM_'));
 
-        // If broker rejected or cancelled order: mark trade closed/cancelled, NO GTT
-        if (latest && (latest.status === 'REJECTED' || latest.status === 'CANCELLED')) {
-            tradingCronLogger.error(
-                `${tag} ✖ Entry order ${state.entryOrderId} was ${latest.status}: ${latest.status_message || 'Broker rejected/cancelled'}. ` +
-                `Marking trade as closed (cancelled) and skipping GTT.`
+        // Case A: Leftover simulated trade in a LIVE production run
+        if (isSimulated && !c.DRY_RUN && !env.dryRun && !env.isTesting) {
+            tradingCronLogger.warn(
+                `${tag} ⚠️ Stale simulation order (${state.entryOrderId}) found in LIVE production mode. ` +
+                `Auto-closing ghost trade state to unblock real live trading.`
             );
             state.status = 'closed';
             state.tradeOutcome = 'cancelled';
@@ -976,60 +974,129 @@ export class TradingV2 {
             return;
         }
 
-        // If entry not yet filled (e.g. AMO REQ RECEIVED, OPEN, TRIGGER PENDING), wait:
-        if (!latest || latest.status !== 'COMPLETE') {
-            tradingCronLogger.info(
-                `${tag} ⏳ Entry order ${state.entryOrderId} is pending fill (status: ${latest?.status ?? 'UNKNOWN'}). Skipping exit evaluation until filled.`
-            );
-            if (state.status !== 'entry_pending') {
-                state.status = 'entry_pending';
-                await (state as any).save();
+        let actualEntryPrice = Number(state.entryPrice ?? 0);
+        let actualQuantity   = Number(state.quantity ?? 0);
+        let stateNeedsSave   = false;
+
+        if (isSimulated) {
+            // Case B: In DRY_RUN / testing mode, simulated orders are treated as filled
+            if (state.status !== 'open') {
+                state.status = 'open';
+                stateNeedsSave = true;
+                tradingCronLogger.info(`${tag} 🟢 [SIMULATION] Status transitioned: ENTRY_PENDING → OPEN`);
             }
-            return;
-        }
+        } else {
+            // Get current order status from Zerodha
+            const history = await kite.getOrderHistory(state.entryOrderId);
+            const latest  = history ? history[history.length - 1] : null;
 
-        // Execution confirmed COMPLETE: Reconcile actual execution price & quantity
-        const actualEntryPrice = Number(latest.average_price);
-        const actualQuantity = Number(latest.filled_quantity);
-        let stateNeedsSave = false;
-
-        // Transition from ENTRY_PENDING to OPEN only after confirmed fill!
-        if (state.status !== 'open') {
-            state.status = 'open';
-            stateNeedsSave = true;
-            tradingCronLogger.info(`${tag} 🟢 Order filled on Zerodha! Status transitioned: ENTRY_PENDING → OPEN`);
-        }
-
-        if (state.entryPrice !== actualEntryPrice || state.quantity !== actualQuantity) {
-            state.entryPrice = actualEntryPrice;
-            state.quantity = actualQuantity;
-            stateNeedsSave = true;
-            tradingCronLogger.info(
-                `${tag} ✔ Reconciled execution from Zerodha: Qty=${actualQuantity}, AvgPrice=₹${actualEntryPrice.toFixed(2)}`
-            );
-        }
-
-        // Check if position was already closed on Zerodha (via GTT execution or manual square-off)
-        try {
-            const positions = await kite.getPositions();
-            const netPos = positions?.net?.find(p => p.tradingsymbol === state.symbol);
-            if (netPos && netPos.quantity === 0 && actualQuantity > 0) {
-                const pnlInr = netPos.pnl || ((netPos.sell_value - netPos.buy_value) || 0);
-                tradesLogger.info(
-                    `${tag} 🏁 Position ${state.symbol} was already squared off on Zerodha (Net Qty = 0, via GTT or manual exit). ` +
-                    `Reconciled P&L: ₹${pnlInr.toFixed(2)}. Marking trade as closed.`
+            // If broker rejected or cancelled order: mark trade closed/cancelled, NO GTT
+            if (latest && (latest.status === 'REJECTED' || latest.status === 'CANCELLED')) {
+                tradingCronLogger.error(
+                    `${tag} ✖ Entry order ${state.entryOrderId} was ${latest.status}: ${latest.status_message || 'Broker rejected/cancelled'}. ` +
+                    `Marking trade as closed (cancelled) and skipping GTT.`
                 );
-                state.exitPrice    = netPos.sell_price || netPos.last_price;
-                state.pnl          = pnlInr;
-                state.dailyPnl     = (state.dailyPnl ?? 0) + pnlInr;
-                state.allTimePnl   = (state.allTimePnl ?? 0) + pnlInr;
-                state.tradeOutcome = pnlInr >= 0 ? 'win' : 'loss';
-                state.status       = 'closed';
+                state.status = 'closed';
+                state.tradeOutcome = 'cancelled';
                 await (state as any).save();
                 return;
             }
-        } catch (posErr: any) {
-            tradingCronLogger.warn(`${tag} ⚠️ Could not fetch net positions from Zerodha: ${posErr.message}`);
+
+            const pendingAgeMs = Date.now() - new Date(state.createdAt).getTime();
+            const PENDING_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes timeout
+
+            // If order was not found in Zerodha:
+            if (!latest) {
+                if (pendingAgeMs > PENDING_TIMEOUT_MS) {
+                    tradingCronLogger.error(
+                        `${tag} ✖ Entry order ${state.entryOrderId} was NOT FOUND in Zerodha after ${Math.round(pendingAgeMs / 60000)}m. ` +
+                        `Marking trade as closed (cancelled) to unblock bot.`
+                    );
+                    state.status = 'closed';
+                    state.tradeOutcome = 'cancelled';
+                    await (state as any).save();
+                    return;
+                }
+
+                tradingCronLogger.warn(
+                    `${tag} ⏳ Entry order ${state.entryOrderId} not found in Zerodha yet (${Math.round(pendingAgeMs / 1000)}s old). ` +
+                    `Waiting for broker sync before evaluating exit.`
+                );
+                return;
+            }
+
+            // If entry not yet filled (e.g. AMO REQ RECEIVED, OPEN, TRIGGER PENDING), wait:
+            if (latest.status !== 'COMPLETE') {
+                if (latest.status === 'OPEN' && pendingAgeMs > PENDING_TIMEOUT_MS) {
+                    tradingCronLogger.warn(
+                        `${tag} ⚠️ Limit entry order ${state.entryOrderId} stayed OPEN without fill for > ${Math.round(PENDING_TIMEOUT_MS / 60000)}m. ` +
+                        `Attempting cancellation on Zerodha...`
+                    );
+                    try {
+                        await kite.cancelOrder('regular', state.entryOrderId);
+                    } catch (e: any) {
+                        tradingCronLogger.warn(`${tag} ⚠️ Cancel request: ${e.message}`);
+                    }
+                    state.status = 'closed';
+                    state.tradeOutcome = 'cancelled';
+                    await (state as any).save();
+                    return;
+                }
+
+                tradingCronLogger.info(
+                    `${tag} ⏳ Entry order ${state.entryOrderId} is pending fill (status: ${latest.status}). Skipping exit evaluation until filled.`
+                );
+                if (state.status !== 'entry_pending') {
+                    state.status = 'entry_pending';
+                    await (state as any).save();
+                }
+                return;
+            }
+
+            // Execution confirmed COMPLETE: Reconcile actual execution price & quantity
+            actualEntryPrice = Number(latest.average_price);
+            actualQuantity   = Number(latest.filled_quantity);
+
+            // Transition from ENTRY_PENDING to OPEN only after confirmed fill!
+            if (state.status !== 'open') {
+                state.status = 'open';
+                stateNeedsSave = true;
+                tradingCronLogger.info(`${tag} 🟢 Order filled on Zerodha! Status transitioned: ENTRY_PENDING → OPEN`);
+            }
+
+            if (state.entryPrice !== actualEntryPrice || state.quantity !== actualQuantity) {
+                state.entryPrice = actualEntryPrice;
+                state.quantity   = actualQuantity;
+                stateNeedsSave   = true;
+                tradingCronLogger.info(
+                    `${tag} ✔ Reconciled execution from Zerodha: Qty=${actualQuantity}, AvgPrice=₹${actualEntryPrice.toFixed(2)}`
+                );
+            }
+        }
+
+        // Check if position was already closed on Zerodha (via GTT execution or manual square-off)
+        if (!isSimulated) {
+            try {
+                const positions = await kite.getPositions();
+                const netPos = positions?.net?.find(p => p.tradingsymbol === state.symbol);
+                if (netPos && netPos.quantity === 0 && actualQuantity > 0) {
+                    const pnlInr = netPos.pnl || ((netPos.sell_value - netPos.buy_value) || 0);
+                    tradesLogger.info(
+                        `${tag} 🏁 Position ${state.symbol} was already squared off on Zerodha (Net Qty = 0, via GTT or manual exit). ` +
+                        `Reconciled P&L: ₹${pnlInr.toFixed(2)}. Marking trade as closed.`
+                    );
+                    state.exitPrice    = netPos.sell_price || netPos.last_price;
+                    state.pnl          = pnlInr;
+                    state.dailyPnl     = (state.dailyPnl ?? 0) + pnlInr;
+                    state.allTimePnl   = (state.allTimePnl ?? 0) + pnlInr;
+                    state.tradeOutcome = pnlInr >= 0 ? 'win' : 'loss';
+                    state.status       = 'closed';
+                    await (state as any).save();
+                    return;
+                }
+            } catch (posErr: any) {
+                tradingCronLogger.warn(`${tag} ⚠️ Could not fetch net positions from Zerodha: ${posErr.message}`);
+            }
         }
 
         // Recalculate TP and SL strictly from actual confirmed fill price
@@ -1047,7 +1114,7 @@ export class TradingV2 {
         }
 
         // Place GTT OCO if not yet created (e.g. for AMO fills or recovered trades)
-        if (!state.stopLossOrderId) {
+        if (!state.stopLossOrderId && !isSimulated) {
             try {
                 tradingCronLogger.info(
                     `${tag} ➔ Placing native GTT OCO (TP/SL) on Zerodha for filled order ${state.entryOrderId}: ` +
@@ -1173,7 +1240,7 @@ export class TradingV2 {
     ): Promise<void> {
         const tag = `[Exit:${c.id}]`;
 
-        if (c.DRY_RUN) {
+        if (c.DRY_RUN || env.dryRun || env.isTesting || state.entryOrderId?.startsWith('TEST_SIM_')) {
             const pnlInr = (currentPrice - (state.entryPrice ?? 0)) * (state.quantity ?? 1);
             state.exitOrderId  = `dry-exit-${Date.now().toString(36)}`;
             state.exitPrice    = currentPrice;
