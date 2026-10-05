@@ -113,9 +113,39 @@ export class MarketDataService {
      * Returns only COMPLETED candles (timestamp < current 1H boundary).
      */
     static async get1hCandles(
-        kite:  KiteExchange,
-        index: string
+        kite:   KiteExchange,
+        index:  string,
+        config?: ConfigType
     ): Promise<Candle[]> {
+        const useCache = config?.USE_CACHE_CANDLE ?? env.useCacheCandle;
+        if (useCache) {
+            const candles15m = await this.get15mCandles(kite, index, config);
+            if (candles15m.length > 0) {
+                const groups = new Map<number, Candle[]>();
+                for (const c of candles15m) {
+                    const b1h = AngelMarketDataService.candleBoundary1h(c.timestamp);
+                    if (!groups.has(b1h)) groups.set(b1h, []);
+                    groups.get(b1h)!.push(c);
+                }
+                const candles1h: Candle[] = [];
+                for (const [timestamp, bars] of groups.entries()) {
+                    bars.sort((a, b) => a.timestamp - b.timestamp);
+                    candles1h.push({
+                        timestamp,
+                        open: bars[0].open,
+                        high: Math.max(...bars.map(b => b.high)),
+                        low: Math.min(...bars.map(b => b.low)),
+                        close: bars[bars.length - 1].close,
+                        volume: bars.reduce((acc, b) => acc + (b.volume || 0), 0),
+                    });
+                }
+                const sorted1h = candles1h.sort((a, b) => a.timestamp - b.timestamp);
+                tradingCronLogger.info(`[MarketDataService] 📁 USE_CACHE_CANDLE=true: Synthesized ${sorted1h.length} 1H candles from cached 15m candles for ${index}`);
+                return sorted1h;
+            }
+            return [];
+        }
+
         const now = Date.now();
         const boundary1h = AngelMarketDataService.candleBoundary1h(now);
 
@@ -143,14 +173,15 @@ export class MarketDataService {
      * This is NOT cached because the live candle changes every minute.
      */
     static async get1hCandlesWithLive(
-        kite:  KiteExchange,
-        index: string,
-        spotPrice: number
+        kite:   KiteExchange,
+        index:  string,
+        spotPrice: number,
+        config?: ConfigType
     ): Promise<Candle[]> {
-        const completedCandles = await this.get1hCandles(kite, index);
+        const completedCandles = await this.get1hCandles(kite, index, config);
 
         // Fetch completed 15m candles from cache to seed high/low if cold start
-        const completed15m = await this.get15mCandles(kite, index).catch(() => []);
+        const completed15m = await this.get15mCandles(kite, index, config).catch(() => []);
 
         const token = (index === 'BANKNIFTY') ? '99926009' : '99926000';
         const liveCandle = LiveCandleBuilder.getLive1hCandle(token, spotPrice, completed15m);
@@ -272,8 +303,8 @@ export class MarketDataService {
             let candles1h: Candle[] = [];
             if (isUtBotEnabled) {
                 candles1h = tradeOnClose
-                    ? await this.get1hCandles(kite, c.INDEX)
-                    : await this.get1hCandlesWithLive(kite, c.INDEX, spotPrice);
+                    ? await this.get1hCandles(kite, c.INDEX, c)
+                    : await this.get1hCandlesWithLive(kite, c.INDEX, spotPrice, c);
             }
 
             const elapsed = Date.now() - startTime;
