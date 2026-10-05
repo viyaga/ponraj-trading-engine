@@ -40,6 +40,8 @@ interface EnvConfig {
     angelOneTotpKey?: string;
     maxLogFiles: number;
     maxDailyLogs: number;
+    optionMinPremium: number;
+    optionMaxPremium: number;
 }
 
 const env: EnvConfig = {
@@ -59,6 +61,8 @@ const env: EnvConfig = {
     angelOneTotpKey: process.env.ANGEL_ONE_TOTP_KEY || '',
     maxLogFiles: Math.max(5, parseInt(process.env.MAX_LOG_FILES || '30', 10)),
     maxDailyLogs: Math.max(3, parseInt(process.env.MAX_DAILY_LOGS || '30', 10)),
+    optionMinPremium: process.env.OPTION_MIN_PREMIUM ? Number(process.env.OPTION_MIN_PREMIUM) : 120,
+    optionMaxPremium: process.env.OPTION_MAX_PREMIUM ? Number(process.env.OPTION_MAX_PREMIUM) : 145,
 };
 
 export default env;

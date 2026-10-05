@@ -749,36 +749,54 @@ export class TradingV2 {
             // ── 11B. Verify Order Execution & Fill Details ────────────────────
             let actualEntryPrice = optionLTP;
             let actualQuantity   = quantity;
+            let isOrderFilled    = false;
 
             if (variety === 'regular') {
                 if (!orderId.startsWith('TEST_SIM_')) {
                     const fill = await this.waitForOrderFill(kite, orderId, tag);
-                    if (!fill || fill.status !== 'COMPLETE' || fill.filledQuantity <= 0) {
+                    if (fill?.status === 'REJECTED' || fill?.status === 'CANCELLED') {
                         tradesLogger.error(
-                            `${tag} ✖ Entry order ${orderId} was not completed (status: ${fill?.status ?? 'TIMEOUT'}). ` +
-                            `ABORTING — GTT will NOT be created and trade state will NOT be marked open.`
+                            `${tag} ✖ Entry order ${orderId} was ${fill.status} by broker: ${fill.statusMessage || 'Rejected/Cancelled'}. ` +
+                            `ABORTING cycle — no position was opened.`
                         );
-                        return; // STOP IMMEDIATELY!
+                        return; // Safely abort since broker rejected the order completely
                     }
-                    actualEntryPrice = fill.averagePrice;
-                    actualQuantity   = fill.filledQuantity;
+
+                    if (fill?.status === 'COMPLETE' && fill.filledQuantity > 0) {
+                        isOrderFilled    = true;
+                        actualEntryPrice = fill.averagePrice;
+                        actualQuantity   = fill.filledQuantity;
+                        tradingCronLogger.info(
+                            `${tag} ✔ Confirmed execution: ${actualQuantity} units @ ₹${actualEntryPrice.toFixed(2)} (scan LTP was ₹${optionLTP.toFixed(2)})`
+                        );
+                    } else {
+                        // Order accepted by Zerodha but still OPEN or timed out waiting for fill confirmation
+                        isOrderFilled    = false;
+                        actualEntryPrice = optionLTP;
+                        actualQuantity   = quantity;
+                        tradingCronLogger.warn(
+                            `${tag} ⏳ Entry order ${orderId} is submitted on Zerodha but pending fill (status: ${fill?.status ?? 'TIMEOUT'}). ` +
+                            `Recording trade state as ENTRY_PENDING. monitorAndExit will track execution and place GTT once filled.`
+                        );
+                    }
                 } else {
+                    isOrderFilled    = true;
                     actualEntryPrice = optionLTP;
                     actualQuantity   = quantity;
+                    tradingCronLogger.info(
+                        `${tag} ✔ [SIMULATION] Simulated execution: ${actualQuantity} units @ ₹${actualEntryPrice.toFixed(2)}`
+                    );
                 }
-
-                tradingCronLogger.info(
-                    `${tag} ✔ Confirmed execution: ${actualQuantity} units @ ₹${actualEntryPrice.toFixed(2)} (scan LTP was ₹${optionLTP.toFixed(2)})`
-                );
             } else {
                 // variety === 'amo': order queued for market open
+                isOrderFilled = false;
                 if (orderId.startsWith('TEST_SIM_')) {
                     actualEntryPrice = optionLTP;
                     actualQuantity   = quantity;
                 }
                 tradingCronLogger.info(
                     `${tag} 📋 AMO order queued for market open (order_id: ${orderId}). ` +
-                    `GTT will not be placed until fill confirmation at market open.`
+                    `GTT will be placed after market opens and fill is confirmed.`
                 );
             }
 
@@ -788,9 +806,9 @@ export class TradingV2 {
             // Apply a small slippage buffer to the SL Limit sell price so it fills during rapid gap downs
             const slLimitPrice = roundTick(slTriggerPrice * 0.99);
 
-            // ── 11D. Place GTT OCO (TP + SL) Order on Zerodha (Only for filled regular orders)
+            // ── 11D. Place GTT OCO (TP + SL) Order on Zerodha (Only for filled real regular orders)
             let gttTriggerId: number | null = null;
-            if (variety === 'regular') {
+            if (isOrderFilled && variety === 'regular' && !orderId.startsWith('TEST_SIM_')) {
                 try {
                     tradingCronLogger.info(
                         `${tag} ➔ Placing native GTT OCO (TP/SL) on Zerodha: ` +
@@ -839,7 +857,7 @@ export class TradingV2 {
             state.symbol          = instrument.tradingsymbol;
             state.side            = 'buy';
             state.quantity        = actualQuantity;
-            state.entryPrice      = (variety === 'amo' && !orderId.startsWith('TEST_SIM_')) ? null : actualEntryPrice;
+            state.entryPrice      = (!isOrderFilled && !orderId.startsWith('TEST_SIM_')) ? null : actualEntryPrice;
             state.tpPrice         = tpPrice;
             state.slPrice         = slTriggerPrice;
             state.effectiveTP     = effectiveTP;
@@ -848,7 +866,7 @@ export class TradingV2 {
             state.slPercentage    = effectiveSL;
             state.stopLossOrderId = gttTriggerId ? String(gttTriggerId) : null;
             state.tradeOutcome    = 'pending';
-            state.status          = (variety === 'amo' && !orderId.startsWith('TEST_SIM_')) ? 'entry_pending' : 'open';
+            state.status          = isOrderFilled ? 'open' : 'entry_pending';
             state.finalScore      = chosenScore;
             state.tradingMode     = strategyName;
             state.signalCandleTimestamp = chosenSignalCandleTimestamp;
@@ -886,18 +904,21 @@ export class TradingV2 {
         kite: KiteExchange,
         orderId: string,
         tag: string,
-        maxRetries: number = 5,
+        maxRetries: number = 8,
         delayMs: number = 1000
     ): Promise<{
         status: string;
         averagePrice: number;
         filledQuantity: number;
+        statusMessage?: string | null;
     } | null> {
+        let lastStatus: string | null = null;
         for (let i = 1; i <= maxRetries; i++) {
             tradingCronLogger.info(`${tag} ⏳ Checking order fill status (${i}/${maxRetries}) for orderId: ${orderId}...`);
             const history = await kite.getOrderHistory(orderId);
             if (history && history.length > 0) {
                 const latest = history[history.length - 1];
+                lastStatus = latest.status;
                 tradingCronLogger.info(
                     `${tag} ➔ Order ${orderId} status: ${latest.status} | filled: ${latest.filled_quantity} | avgPrice: ₹${latest.average_price}`
                 );
@@ -921,6 +942,7 @@ export class TradingV2 {
                         status: latest.status,
                         averagePrice: 0,
                         filledQuantity: 0,
+                        statusMessage: latest.status_message,
                     };
                 }
 
@@ -939,8 +961,12 @@ export class TradingV2 {
             }
         }
 
-        tradingCronLogger.warn(`${tag} ⚠️ Timed out waiting for order ${orderId} to complete after ${maxRetries * (delayMs / 1000)}s`);
-        return null;
+        tradingCronLogger.warn(`${tag} ⚠️ Timed out waiting for order ${orderId} to complete after ${maxRetries * (delayMs / 1000)}s (last status: ${lastStatus ?? 'UNKNOWN'})`);
+        return {
+            status: lastStatus ?? 'TIMEOUT',
+            averagePrice: 0,
+            filledQuantity: 0,
+        };
     }
 
     // ─── Exit monitoring (called per cycle if bot has open position) ───────

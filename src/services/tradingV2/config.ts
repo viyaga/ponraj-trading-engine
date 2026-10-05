@@ -4,6 +4,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { ConfigType } from './type';
+import { env } from '../../config';
 
 export class TradingConfig {
 
@@ -37,9 +38,9 @@ export class TradingConfig {
         CANDLE_PATTERN_STRATEGY_TP_PCT: 10, // Candle Pattern 15m: exit when premium +10%
         CANDLE_PATTERN_STRATEGY_SL_PCT: 10, // Candle Pattern 15m: exit when premium -10%
 
-        // Option LTP Range Filter
-        OPTION_MIN_PREMIUM: 120,   // ₹ — only trade options priced ≥120
-        OPTION_MAX_PREMIUM: 150,   // ₹ — only trade options priced ≤150
+        // Option LTP Range Filter — select option with maximum price of 145
+        OPTION_MIN_PREMIUM: env.optionMinPremium ?? 120,   // ₹ — only trade options priced ≥120
+        OPTION_MAX_PREMIUM: env.optionMaxPremium ?? 145,   // ₹ — only trade options priced ≤145
 
         // Candle Pattern Strategy (Hammer & Shooting Star Day Reversal - 1st Priority)
         CANDLE_PATTERN_STRATEGY_ENABLED: true,

@@ -40,7 +40,7 @@ export interface ConfigType {
 
     // Option LTP Range Filter — only trade options priced within this window
     OPTION_MIN_PREMIUM: number;     // default: 120 (₹)
-    OPTION_MAX_PREMIUM: number;     // default: 150 (₹)
+    OPTION_MAX_PREMIUM: number;     // default: 145 (₹)
 
     // Candle Pattern Strategy (Hammer & Shooting Star Day Reversal - 3rd Priority)
     CANDLE_PATTERN_STRATEGY_ENABLED?: boolean;   // default: true
