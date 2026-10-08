@@ -39,8 +39,8 @@ export interface ConfigType {
     UT_BOT_STRATEGY_SL_PCT:  number; // UT Bot 1H strategy SL% (default: 10)
 
     // Option LTP Range Filter — only trade options priced within this window
-    OPTION_MIN_PREMIUM: number;     // default: 120 (₹)
-    OPTION_MAX_PREMIUM: number;     // default: 145 (₹)
+    OPTION_MIN_PREMIUM: number;     // default: 100 (₹)
+    OPTION_MAX_PREMIUM: number;     // default: 130 (₹)
 
     // Candle Pattern Strategy (Hammer & Shooting Star Day Reversal - 3rd Priority)
     CANDLE_PATTERN_STRATEGY_ENABLED?: boolean;   // default: true

@@ -204,8 +204,8 @@ export class Data {
             CANDLE_PATTERN_STRATEGY_SL_PCT:  bot.CANDLE_PATTERN_STRATEGY_SL_PCT  ?? defaults.CANDLE_PATTERN_STRATEGY_SL_PCT  ?? 10,
 
             // Option LTP Range Filter
-            OPTION_MIN_PREMIUM: bot.OPTION_MIN_PREMIUM ?? defaults.OPTION_MIN_PREMIUM ?? 120,
-            OPTION_MAX_PREMIUM: bot.OPTION_MAX_PREMIUM ?? defaults.OPTION_MAX_PREMIUM ?? 145,
+            OPTION_MIN_PREMIUM: bot.OPTION_MIN_PREMIUM ?? defaults.OPTION_MIN_PREMIUM ?? 100,
+            OPTION_MAX_PREMIUM: bot.OPTION_MAX_PREMIUM ?? defaults.OPTION_MAX_PREMIUM ?? 130,
 
             // Trailing SL
             IS_TRAILING_SL_ENABLED: bot.IS_TRAILING_SL_ENABLED ?? defaults.IS_TRAILING_SL_ENABLED ?? false,
