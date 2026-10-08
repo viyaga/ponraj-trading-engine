@@ -178,7 +178,7 @@ function runTests() {
     ];
     const resHammerNearHigh = CandlePatternStrategy.evaluateSignal(candlesUpForHammer, 24595, baseConfig);
     assert(resHammerNearHigh.signal === 'NONE', 'Hammer near Day HIGH is rejected (must be near Day Low)');
-    assert(resHammerNearHigh.skipReasons.some(r => r.includes('NOT near Day Low')), 'Skip reason explains NOT near Day Low');
+    assert(resHammerNearHigh.skipReasons.some(r => r.includes('NOT Day Low')), 'Skip reason explains NOT Day Low');
 
     // ─── 6. Strategy Evaluation: Shooting Star Near Day High → PUT OPTION (PE) ─
     console.log('\n[Suite 6] Full Strategy Execution: Shooting Star Near Day High...');
