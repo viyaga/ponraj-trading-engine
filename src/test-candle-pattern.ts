@@ -151,19 +151,20 @@ function runTests() {
         { timestamp: nowTs - 1 * 15 * 60000, open: 24450, high: 24456, low: 24416, close: 24454, volume: 3000 },
     ];
 
-    // Case 5A: Spot price has broken above Hammer High (24456) -> Breakout confirmed!
-    const spotPriceBreakout = 24465; // > 24456
+    // Case 5A: Spot above hammer high — should fire BULL immediately on pattern close
+    const spotPriceBreakout = 24465;
     const resHammerBull = CandlePatternStrategy.evaluateSignal(candlesDown, spotPriceBreakout, baseConfig);
-    assert(resHammerBull.signal === 'BULL', 'Signal is BULL on Hammer High breakout');
+    assert(resHammerBull.signal === 'BULL', 'Signal is BULL (spot above hammer high)');
     assert(resHammerBull.optionType === 'CE', 'Option type is CE (Call Option)');
     assert(resHammerBull.pattern === 'HAMMER', 'Identified pattern is HAMMER');
     assert(resHammerBull.score === 100, 'Score is 100');
 
-    // Case 5B: Spot price has NOT broken above Hammer High (<= 24456) -> Breakout NOT confirmed
-    const spotPriceNoBreakout = 24450; // <= 24456
+    // Case 5B: Spot still below hammer high — BULL fires immediately (no confirmation required)
+    const spotPriceNoBreakout = 24450;
     const resHammerNoBreak = CandlePatternStrategy.evaluateSignal(candlesDown, spotPriceNoBreakout, baseConfig);
-    assert(resHammerNoBreak.signal === 'NONE', 'Signal is NONE when breakout not confirmed');
-    assert(resHammerNoBreak.skipReasons.some(r => r.includes('breakout NOT confirmed')), 'Skip reason mentions breakout not confirmed');
+    assert(resHammerNoBreak.signal === 'BULL', 'Signal is BULL even when spot has not crossed hammer high (no wait)');
+    assert(resHammerNoBreak.optionType === 'CE', 'Option type is CE');
+    assert(resHammerNoBreak.reasons.some(r => r.includes('no breakout wait')), 'Reason mentions no breakout wait');
 
     // Case 5C: Hammer formed near Day HIGH instead of Day Low -> Skipped
     const candlesUpForHammer: Candle[] = [
@@ -191,19 +192,20 @@ function runTests() {
         { timestamp: nowTs - 1 * 15 * 60000, open: 24650, high: 24685, low: 24644, close: 24645, volume: 3000 },
     ];
 
-    // Case 6A: Spot breaks below Shooting Star Low (24644) -> Breakdown confirmed!
-    const spotPriceBreakdown = 24635; // < 24644
+    // Case 6A: Spot below shooting star low — BEAR fires immediately on pattern close
+    const spotPriceBreakdown = 24635;
     const resStarBear = CandlePatternStrategy.evaluateSignal(candlesUp, spotPriceBreakdown, baseConfig);
-    assert(resStarBear.signal === 'BEAR', 'Signal is BEAR on Shooting Star Low breakdown');
+    assert(resStarBear.signal === 'BEAR', 'Signal is BEAR (spot below shooting star low)');
     assert(resStarBear.optionType === 'PE', 'Option type is PE (Put Option)');
     assert(resStarBear.pattern === 'SHOOTING_STAR', 'Identified pattern is SHOOTING_STAR');
     assert(resStarBear.score === 100, 'Score is 100');
 
-    // Case 6B: Spot has NOT broken below Shooting Star Low (>= 24644)
-    const spotPriceNoBreakdown = 24655; // >= 24644
+    // Case 6B: Spot still above shooting star low — BEAR fires immediately (no confirmation required)
+    const spotPriceNoBreakdown = 24655;
     const resStarNoBreak = CandlePatternStrategy.evaluateSignal(candlesUp, spotPriceNoBreakdown, baseConfig);
-    assert(resStarNoBreak.signal === 'NONE', 'Signal is NONE when breakdown not confirmed');
-    assert(resStarNoBreak.skipReasons.some(r => r.includes('breakdown NOT confirmed')), 'Skip reason mentions breakdown not confirmed');
+    assert(resStarNoBreak.signal === 'BEAR', 'Signal is BEAR even when spot has not crossed shooting star low (no wait)');
+    assert(resStarNoBreak.optionType === 'PE', 'Option type is PE');
+    assert(resStarNoBreak.reasons.some(r => r.includes('no breakdown wait')), 'Reason mentions no breakdown wait');
 
     console.log('='.repeat(80));
     console.log(`🏁 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

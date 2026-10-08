@@ -468,18 +468,7 @@ export class CandlePatternStrategy {
                     continue;
                 }
 
-                // Trade Confirmation: Spot price or confirming candle breaks above Pattern High
-                const isBreakoutConfirmed = spotPrice > candle.high || (idx < lastIdx && sorted[lastIdx].high > candle.high);
-
-                if (!isBreakoutConfirmed) {
-                    result.skipReasons.push(
-                        `${detected.pattern} at Day Low detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}, Low: ₹${candle.low.toFixed(1)}), ` +
-                        `but breakout NOT confirmed (Spot ₹${spotPrice.toFixed(1)} <= High ₹${candle.high.toFixed(1)})`
-                    );
-                    continue;
-                }
-
-                // Both Pattern + Day Low Proximity + Breakout Confirmed!
+                // No breakout confirmation required — take the trade immediately on pattern detection
                 const patternLabel = detected.pattern === 'PIN_BAR_BULLISH' ? 'BULLISH PIN BAR' : 'HAMMER';
                 const extremeDesc = patternConfig.requireExactDayExtreme ? 'AT DAY LOW' : 'NEAR DAY LOW';
                 result.signal = 'BULL';
@@ -487,16 +476,16 @@ export class CandlePatternStrategy {
                 result.pattern = detected.pattern;
                 result.score = 100;
                 result.patternCandle = candle;
-                result.confirmingCandle = idx < lastIdx ? sorted[lastIdx] : undefined;
+                result.confirmingCandle = undefined;
                 result.signalCandleTimestamp = candle.timestamp;
 
                 const comp = detected.components;
                 const lowerWickRatio = comp.body > 0 ? (comp.lowerWick / comp.body).toFixed(1) : 'inf';
                 result.reasons.push(
-                    `🔨 ${patternLabel} ${extremeDesc} confirmed [${candleTimeStr} IST]: Candle Low ₹${candle.low.toFixed(1)} ` +
+                    `🔨 ${patternLabel} ${extremeDesc} [${candleTimeStr} IST]: Candle Low ₹${candle.low.toFixed(1)} ` +
                     `is the Day Low ₹${candleDayLow.toFixed(1)} (Day Range: ₹${dayRange.toFixed(1)}). ` +
                     `Body: ${(comp.bodyPercent * 100).toFixed(1)}%, Lower Wick: ${lowerWickRatio}x body. ` +
-                    `BREAKOUT CONFIRMED: High ₹${candle.high.toFixed(1)} broken (Current: ₹${spotPrice.toFixed(1)}).`
+                    `Spot: ₹${spotPrice.toFixed(1)} — entering on pattern close (no breakout wait).`
                 );
                 return result;
             }
@@ -518,18 +507,7 @@ export class CandlePatternStrategy {
                     continue;
                 }
 
-                // Trade Confirmation: Spot price or confirming candle breaks below Pattern Low
-                const isBreakoutConfirmed = spotPrice < candle.low || (idx < lastIdx && sorted[lastIdx].low < candle.low);
-
-                if (!isBreakoutConfirmed) {
-                    result.skipReasons.push(
-                        `${detected.pattern} at Day High detected at [${candleTimeStr} IST] (High: ₹${candle.high.toFixed(1)}, Low: ₹${candle.low.toFixed(1)}), ` +
-                        `but breakdown NOT confirmed (Spot ₹${spotPrice.toFixed(1)} >= Low ₹${candle.low.toFixed(1)})`
-                    );
-                    continue;
-                }
-
-                // Both Pattern + Day High Proximity + Breakdown Confirmed!
+                // No breakdown confirmation required — take the trade immediately on pattern detection
                 const patternLabel = detected.pattern === 'PIN_BAR_BEARISH' ? 'BEARISH PIN BAR' : 'SHOOTING STAR';
                 const extremeDesc = patternConfig.requireExactDayExtreme ? 'AT DAY HIGH' : 'NEAR DAY HIGH';
                 result.signal = 'BEAR';
@@ -537,16 +515,16 @@ export class CandlePatternStrategy {
                 result.pattern = detected.pattern;
                 result.score = 100;
                 result.patternCandle = candle;
-                result.confirmingCandle = idx < lastIdx ? sorted[lastIdx] : undefined;
+                result.confirmingCandle = undefined;
                 result.signalCandleTimestamp = candle.timestamp;
 
                 const comp = detected.components;
                 const upperWickRatio = comp.body > 0 ? (comp.upperWick / comp.body).toFixed(1) : 'inf';
                 result.reasons.push(
-                    `⭐ ${patternLabel} ${extremeDesc} confirmed [${candleTimeStr} IST]: Candle High ₹${candle.high.toFixed(1)} ` +
+                    `⭐ ${patternLabel} ${extremeDesc} [${candleTimeStr} IST]: Candle High ₹${candle.high.toFixed(1)} ` +
                     `is the Day High ₹${candleDayHigh.toFixed(1)} (Day Range: ₹${dayRange.toFixed(1)}). ` +
                     `Body: ${(comp.bodyPercent * 100).toFixed(1)}%, Upper Wick: ${upperWickRatio}x body. ` +
-                    `BREAKDOWN CONFIRMED: Low ₹${candle.low.toFixed(1)} broken (Current: ₹${spotPrice.toFixed(1)}).`
+                    `Spot: ₹${spotPrice.toFixed(1)} — entering on pattern close (no breakdown wait).`
                 );
                 return result;
             }
